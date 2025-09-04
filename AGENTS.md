@@ -38,3 +38,43 @@ Note: CUDA and FlashAttention setup is in `README.md`.
 ## Security & Configuration Tips
 - Store credentials in env vars (e.g., `WANDB_API_KEY`) and avoid committing `.env` files.
 - Large artifacts live outside the repo (e.g., `data/`, `checkpoints/`) and should be gitignored locally.
+
+## Hybrid Integration Status (Work Log)
+- Branch: working on `dev` (tracking `origin/dev`). `main` remains the upstream base.
+- New files: `models/transformer_frontend.py`, `models/adapters.py`, `models/hybrid_hrm_transformer.py`, `evaluate_hybrid.py`, `train_hybrid.py`, `utils/reasoning.py`, `utils/text_codec.py`, `scripts/test_hybrid_routing.py`, `dataset/build_text_dataset.py`.
+- README: added Hybrid section and [REASON] JSON examples. `requirements.txt`: added `transformers`.
+
+### What Works Now
+- Transformer front-end: Hugging Face causal LM wrapper with `[REASON]`/`[ENDREASON]` special tokens.
+- Hybrid wrapper: auto‑detects adapter dims; instantiates HRM on transformer’s device; exposes `load_hrm_checkpoint(path)`.
+- Routing: extracts `[REASON]... [ENDREASON]`; parses JSON; supports tasks:
+  - `calc` (stub expression evaluator for smoke tests)
+  - `text` (byte‑level prompt routed through HRM; requires HRM vocab_size ≥ 257)
+  - `sudoku` (example domain; optional)
+- Tests: `python scripts/test_hybrid_routing.py` validates adapter dims + routing without HF/flash‑attn.
+
+### How To Run Quickly
+- End‑to‑end demo: `python evaluate_hybrid.py` (shows calc + example domain). For coding/math, use:
+  - `demo = 'Answer: [REASON] {"task":"text","prompt":"2+2*(3-1) = "} [ENDREASON]'`
+  - Load HRM first: `model.load_hrm_checkpoint('checkpoints/<project>/<run>/step_<N>')`
+
+### Build Byte‑Level Text Dataset (for coding/math/science)
+- Prepare JSONL lines: `{"prompt":"<input>", "target":"<desired output>"}` under `data/raw/text_tasks/{train,test}.jsonl`.
+- Build: `python dataset/build_text_dataset.py --input-dir data/raw/text_tasks --output-dir data/text-512 --seq-len 512`
+- Metadata uses `vocab_size=257`, `seq_len=512`. Tokens: PAD=0, bytes=1..256.
+
+### Train HRM (non‑autoregressive + ACT)
+- Single node (example):
+  - `OMP_NUM_THREADS=8 torchrun --nproc-per-node 8 pretrain.py data_path=data/text-512`
+- Ensure Hydra overrides match dataset: `arch.*`, `seq_len`, `vocab_size=257`, batch sizes, LR, and `halt_max_steps`.
+- Check W&B metrics; checkpoints saved under `checkpoints/<project>/<run>/step_<N>`.
+
+### Known Issues / Notes
+- Transformers may warn about ignored flags (safe to ignore). Large models will download on first run.
+- Ensure FlashAttention and CUDA/PyTorch versions match. Device mismatches are fixed by constructing HRM on the transformer’s device.
+
+### Next Actions (Tomorrow)
+- Add CLI flags to `evaluate_hybrid.py` for `--hrm-checkpoint` and inline [REASON] prompts.
+- Train a small byte‑level HRM on a toy text set; verify `{"task":"text"}` path end‑to‑end.
+- Add streaming routing via HF StoppingCriteria (intercept [REASON] during generation).
+- Optional: expand handler registry (math scratchpad, code I/O schema), and add logging/metrics hooks.
