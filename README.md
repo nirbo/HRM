@@ -10,7 +10,6 @@ These results underscore HRM’s potential as a transformative advancement towar
 
 **Join our Discord Community: [https://discord.gg/sapient](https://discord.gg/sapient)**
 
-
 ## Quick Start Guide 🚀
 
 ### Prerequisites ⚙️
@@ -55,6 +54,24 @@ pip3 install flash-attn
 pip install -r requirements.txt
 ```
 
+## Hybrid HRM–Transformer Model 🌐
+
+The repository now includes experimental code for combining a pretrained
+language model with the HRM core. The hybrid setup is composed of:
+
+- `models/transformer_frontend.py`: wrapper around Hugging Face causal LMs
+  with special reasoning markers.
+- `models/adapters.py`: linear adapters bridging transformer and HRM
+  representations.
+- `models/hybrid_hrm_transformer.py`: high-level orchestrator joining the
+  components.
+- `train_hybrid.py` and `evaluate_hybrid.py`: minimal examples for training
+  and running the hybrid model.
+
+The default configuration targets the
+[Gemma 3 4B instruction-tuned model](https://huggingface.co/google/gemma-3-4b-it),
+but smaller models can be used for experimentation.
+
 ## W&B Integration 📈
 
 This project uses [Weights & Biases](https://wandb.ai/) for experiment tracking and metric visualization. Ensure you're logged in:
@@ -81,9 +98,9 @@ Runtime: ~10 hours on a RTX 4070 laptop GPU
 
 ## Trained Checkpoints 🚧
 
- - [ARC-AGI-2](https://huggingface.co/sapientinc/HRM-checkpoint-ARC-2)
- - [Sudoku 9x9 Extreme (1000 examples)](https://huggingface.co/sapientinc/HRM-checkpoint-sudoku-extreme)
- - [Maze 30x30 Hard (1000 examples)](https://huggingface.co/sapientinc/HRM-checkpoint-maze-30x30-hard)
+- [ARC-AGI-2](https://huggingface.co/sapientinc/HRM-checkpoint-ARC-2)
+- [Sudoku 9x9 Extreme (1000 examples)](https://huggingface.co/sapientinc/HRM-checkpoint-sudoku-extreme)
+- [Maze 30x30 Hard (1000 examples)](https://huggingface.co/sapientinc/HRM-checkpoint-maze-30x30-hard)
 
 To use the checkpoints, see Evaluation section below.
 
@@ -114,8 +131,8 @@ python dataset/build_maze_dataset.py  # 1000 examples
 
 Explore the puzzles visually:
 
-* Open `puzzle_visualizer.html` in your browser.
-* Upload the generated dataset folder located in `data/...`.
+- Open `puzzle_visualizer.html` in your browser.
+- Upload the generated dataset folder located in `data/...`.
 
 ## Launch experiments
 
@@ -124,10 +141,10 @@ Explore the puzzles visually:
 ARC-1:
 
 ```bash
-OMP_NUM_THREADS=8 torchrun --nproc-per-node 8 pretrain.py 
+OMP_NUM_THREADS=8 torchrun --nproc-per-node 8 pretrain.py
 ```
 
-*Runtime:* ~24 hours
+_Runtime:_ ~24 hours
 
 ARC-2:
 
@@ -135,7 +152,7 @@ ARC-2:
 OMP_NUM_THREADS=8 torchrun --nproc-per-node 8 pretrain.py data_path=data/arc-2-aug-1000
 ```
 
-*Runtime:* ~24 hours (checkpoint after 8 hours is often sufficient)
+_Runtime:_ ~24 hours (checkpoint after 8 hours is often sufficient)
 
 Sudoku Extreme (1k):
 
@@ -143,7 +160,7 @@ Sudoku Extreme (1k):
 OMP_NUM_THREADS=8 torchrun --nproc-per-node 8 pretrain.py data_path=data/sudoku-extreme-1k-aug-1000 epochs=20000 eval_interval=2000 lr=1e-4 puzzle_emb_lr=1e-4 weight_decay=1.0 puzzle_emb_weight_decay=1.0
 ```
 
-*Runtime:* ~10 minutes
+_Runtime:_ ~10 minutes
 
 Maze 30x30 Hard (1k):
 
@@ -151,7 +168,7 @@ Maze 30x30 Hard (1k):
 OMP_NUM_THREADS=8 torchrun --nproc-per-node 8 pretrain.py data_path=data/maze-30x30-hard-1k epochs=20000 eval_interval=2000 lr=1e-4 puzzle_emb_lr=1e-4 weight_decay=1.0 puzzle_emb_weight_decay=1.0
 ```
 
-*Runtime:* ~1 hour
+_Runtime:_ ~1 hour
 
 ### Full Sudoku-Hard
 
@@ -159,36 +176,36 @@ OMP_NUM_THREADS=8 torchrun --nproc-per-node 8 pretrain.py data_path=data/maze-30
 OMP_NUM_THREADS=8 torchrun --nproc-per-node 8 pretrain.py data_path=data/sudoku-hard-full epochs=100 eval_interval=10 lr_min_ratio=0.1 global_batch_size=2304 lr=3e-4 puzzle_emb_lr=3e-4 weight_decay=0.1 puzzle_emb_weight_decay=0.1 arch.loss.loss_type=softmax_cross_entropy arch.L_cycles=8 arch.halt_max_steps=8 arch.pos_encodings=learned
 ```
 
-*Runtime:* ~2 hours
+_Runtime:_ ~2 hours
 
 ## Evaluation
 
 Evaluate your trained models:
 
-* Check `eval/exact_accuracy` in W&B.
-* For ARC-AGI, follow these additional steps:
+- Check `eval/exact_accuracy` in W&B.
+- For ARC-AGI, follow these additional steps:
 
 ```bash
 OMP_NUM_THREADS=8 torchrun --nproc-per-node 8 evaluate.py checkpoint=<CHECKPOINT_PATH>
 ```
 
-* Then use the provided `arc_eval.ipynb` notebook to finalize and inspect your results.
+- Then use the provided `arc_eval.ipynb` notebook to finalize and inspect your results.
 
 ## Notes
 
- - Small-sample learning typically exhibits accuracy variance of around ±2 points.
- - For Sudoku-Extreme (1,000-example dataset), late-stage overfitting may cause numerical instability during training and Q-learning. It is advisable to use early stopping once the training accuracy approaches 100%.
+- Small-sample learning typically exhibits accuracy variance of around ±2 points.
+- For Sudoku-Extreme (1,000-example dataset), late-stage overfitting may cause numerical instability during training and Q-learning. It is advisable to use early stopping once the training accuracy approaches 100%.
 
 ## Citation 📜
 
 ```bibtex
 @misc{wang2025hierarchicalreasoningmodel,
-      title={Hierarchical Reasoning Model}, 
+      title={Hierarchical Reasoning Model},
       author={Guan Wang and Jin Li and Yuhao Sun and Xing Chen and Changling Liu and Yue Wu and Meng Lu and Sen Song and Yasin Abbasi Yadkori},
       year={2025},
       eprint={2506.21734},
       archivePrefix={arXiv},
       primaryClass={cs.AI},
-      url={https://arxiv.org/abs/2506.21734}, 
+      url={https://arxiv.org/abs/2506.21734},
 }
 ```
