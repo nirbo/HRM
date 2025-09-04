@@ -10,7 +10,8 @@ from torch import nn
 
 @dataclass
 class AdapterConfig:
-    transformer_dim: int
+    # If transformer_dim is None/0 it will be inferred by the hybrid wrapper.
+    transformer_dim: int | None
     hrm_dim: int
 
 

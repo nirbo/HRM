@@ -34,9 +34,7 @@ class DummyDataset(Dataset):
 def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    config = HybridConfig(
-        transformer=TransformerFrontEndConfig(device=device),
-        hrm=HierarchicalReasoningModel_ACTV1Config(
+    hrm_cfg = HierarchicalReasoningModel_ACTV1Config(
             batch_size=1,
             seq_len=32,
             puzzle_emb_ndim=0,
@@ -52,8 +50,11 @@ def main() -> None:
             pos_encodings="rope",
             halt_max_steps=1,
             halt_exploration_prob=0.0,
-        ),
-        adapter=AdapterConfig(transformer_dim=256, hrm_dim=256),
+        )
+    config = HybridConfig(
+        transformer=TransformerFrontEndConfig(device=device),
+        hrm=hrm_cfg.model_dump(),
+        adapter=AdapterConfig(transformer_dim=None, hrm_dim=256),
     )
 
     model = HybridHRMTransformer(config).to(device)
