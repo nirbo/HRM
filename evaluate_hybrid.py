@@ -32,11 +32,16 @@ def main() -> None:
     config = HybridConfig(
         transformer=TransformerFrontEndConfig(device=device),
         hrm=hrm_cfg.model_dump(),
-        adapter=AdapterConfig(transformer_dim=None, hrm_dim=256),
+        adapter=AdapterConfig(transformer_dim=None, hrm_dim=None),
     )
     model = HybridHRMTransformer(config).to(device)
-    demo = 'Answer this succinctly: [REASON] {"task":"calc","expression":"2+2*(3-1)"} [ENDREASON]'
-    print(model.generate(demo))
+    # Calc stub
+    demo_calc = 'Answer this succinctly: [REASON] {"task":"calc","expression":"2+2*(3-1)"} [ENDREASON]'
+    print(model.generate(demo_calc))
+
+    # Sudoku routing (expects an HRM checkpoint loaded separately)
+    demo_sudoku = 'Solve: [REASON] {"task":"sudoku","grid":"530070000600195000098000060800060003400803001700020006060000280000419005000080079"} [ENDREASON]'
+    print(model.generate(demo_sudoku))
 
 
 if __name__ == "__main__":  # pragma: no cover
