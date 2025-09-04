@@ -43,7 +43,11 @@ class HybridHRMTransformer(nn.Module):
             hrm_cfg = config.hrm
             if hasattr(hrm_cfg, "model_dump"):
                 hrm_cfg = hrm_cfg.model_dump()
-            self.hrm = HierarchicalReasoningModel_ACTV1(hrm_cfg)  # type: ignore
+            # Instantiate on the transformer's device to ensure non-persistent buffers
+            # (e.g., RoPE caches) are created on the correct device.
+            t_device = getattr(getattr(self.transformer, "model", None), "device", torch.device("cpu"))
+            with torch.device(str(t_device)):
+                self.hrm = HierarchicalReasoningModel_ACTV1(hrm_cfg)  # type: ignore
 
         # Auto-infer adapter dims if not provided.
         t_dim = self._infer_transformer_hidden_dim()
@@ -141,6 +145,11 @@ class HybridHRMTransformer(nn.Module):
                 return self._solve_sudoku_with_hrm(obj)
             except Exception as exc:  # noqa: BLE001
                 return f"<HRM-SUDOKU-ERROR:{exc}>"
+        elif task == "text":
+            try:
+                return self._solve_text_with_hrm(obj)
+            except Exception as exc:  # noqa: BLE001
+                return f"<HRM-TEXT-ERROR:{exc}>"
         else:
             try:
                 return handle_stub_task(obj)
@@ -210,3 +219,44 @@ class HybridHRMTransformer(nn.Module):
     def load_hrm_checkpoint(self, path: str) -> None:
         state = torch.load(path, map_location=next(self.hrm.parameters()).device)
         self.hrm.load_state_dict(state, strict=False)
+
+    def _solve_text_with_hrm(self, obj: dict) -> str:
+        import torch
+        from utils.text_codec import encode_bytes, decode_bytes
+
+        prompt = obj.get("prompt")
+        if not isinstance(prompt, str):
+            raise ValueError("missing or invalid 'prompt'")
+
+        # Encode prompt as byte-level tokens 1..256
+        ids = encode_bytes(prompt)
+
+        # Require HRM trained with byte vocab (PAD=0, bytes=1..256)
+        vocab = getattr(getattr(self.hrm, "config", None), "vocab_size", None)
+        if not isinstance(vocab, int) or vocab < 257:
+            raise ValueError(f"HRM vocab_size={vocab} incompatible; expected >= 257 (byte-level)")
+
+        device = next(self.hrm.parameters()).device
+        seq_len = getattr(self.hrm.config, "seq_len", None)
+        if not isinstance(seq_len, int):
+            raise ValueError("HRM missing seq_len config")
+
+        # Truncate or pad prompt to seq_len
+        ids = ids[:seq_len]
+        pad = [0] * (seq_len - len(ids))
+        inputs = torch.tensor([ids + pad], dtype=torch.int32, device=device)
+        puzzle_identifiers = torch.zeros((1,), dtype=torch.int32, device=device)
+
+        batch = {"inputs": inputs, "puzzle_identifiers": puzzle_identifiers}
+        carry = self.hrm.initial_carry(batch)
+
+        with torch.inference_mode():
+            max_steps = int(getattr(self.hrm.config, "halt_max_steps", 1) or 1)
+            for _ in range(max_steps):
+                carry, outputs = self.hrm(carry=carry, batch=batch)
+                if carry.halted.all():
+                    break
+
+        logits = outputs["logits"]
+        pred = torch.argmax(logits, dim=-1)[0].tolist()
+        return decode_bytes(pred)

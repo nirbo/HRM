@@ -72,7 +72,7 @@ The default configuration targets the
 [Gemma 3 4B instruction-tuned model](https://huggingface.co/google/gemma-3-4b-it),
 but smaller models can be used for experimentation.
 
-Example routing (stub):
+Example routing (JSON):
 
 ```bash
 python evaluate_hybrid.py
@@ -80,9 +80,37 @@ python evaluate_hybrid.py
 # "Answer this succinctly: [REASON] {\"task\":\"calc\",\"expression\":\"2+2*(3-1)\"} [ENDREASON]"
 ```
 
-Note: the current implementation includes a minimal JSON parser and a "calc" test
-task to validate the routing path. Domain-specific HRM execution (e.g., Sudoku/ARC)
-will be wired next.
+Supported [REASON] tasks:
+- `{"task":"calc","expression":"2+2*(3-1)"}`: lightweight built-in stub.
+- `{"task":"text","prompt":"..."}`: routes byte-level text to HRM; requires HRM trained with vocab_size>=257 (PAD+bytes) and suitable seq_len.
+- `{"task":"sudoku", ...}`: example of domain routing (optional).
+
+To load an HRM checkpoint inside the hybrid:
+
+```python
+model = HybridHRMTransformer(config).to(device)
+model.load_hrm_checkpoint("checkpoints/<project>/<run>/step_<N>")
+```
+
+For coding/math/science reasoning, prefer the `text` task and train HRM on a
+byte-level text dataset as described below.
+
+## Build Byte-level Text Dataset
+
+Prepare `data/raw/text_tasks/train.jsonl` and `test.jsonl` with lines like:
+
+```json
+{"prompt": "Compute 12*13:", "target": "156"}
+```
+
+Then build the dataset:
+
+```bash
+python dataset/build_text_dataset.py --input-dir data/raw/text_tasks --output-dir data/text-512 --seq-len 512
+```
+
+Train HRM on this dataset with `pretrain.py` (non-autoregressive). Ensure
+`vocab_size=257` and `seq_len` match the dataset metadata.
 
 ## W&B Integration 📈
 
