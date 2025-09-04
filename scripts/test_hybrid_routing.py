@@ -68,8 +68,8 @@ def main():
     assert m.encoder.proj.out_features == 64
 
     # Routing
-    out = m.generate("Compute: [REASON] 2+2 [ENDREASON] now")
-    assert "<HRM:2+2>" in out
+    out = m.generate('Compute: [REASON] {"task":"calc","expression":"2+2*(3-1)"} [ENDREASON] now')
+    assert "ECHO::" in out and "6" in out
     print("OK: routing + adapter dims")
 
 

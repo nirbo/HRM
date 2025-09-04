@@ -100,7 +100,19 @@ class HybridHRMTransformer(nn.Module):
     def _run_hrm(self, content: str) -> str:
         """Bridge function from natural text to HRM I/O.
 
-        Placeholder implementation: returns a tagged echo. Will be replaced with
-        domain-specific parsing and HRM execution.
+        Parses JSON inside the [REASON] block and dispatches to a tiny stub
+        handler for smoke tests. Real HRM domains will replace this.
         """
-        return f"<HRM:{content.strip()}>"
+        from utils.reasoning import parse_reason_content, handle_stub_task
+        text = content.strip()
+        try:
+            obj = parse_reason_content(text)
+        except Exception as exc:  # noqa: BLE001
+            return f"<HRM-PARSE-ERROR:{exc}>"
+
+        try:
+            ans = handle_stub_task(obj)
+        except Exception as exc:  # noqa: BLE001
+            return f"<HRM-EXEC-ERROR:{exc}>"
+
+        return ans
