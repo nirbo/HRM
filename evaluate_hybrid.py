@@ -35,7 +35,8 @@ def main() -> None:
         adapter=AdapterConfig(transformer_dim=None, hrm_dim=256),
     )
     model = HybridHRMTransformer(config).to(device)
-    print(model.generate("What is 2+2?"))
+    demo = 'Answer this succinctly: [REASON] {"task":"calc","expression":"2+2*(3-1)"} [ENDREASON]'
+    print(model.generate(demo))
 
 
 if __name__ == "__main__":  # pragma: no cover

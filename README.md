@@ -72,6 +72,18 @@ The default configuration targets the
 [Gemma 3 4B instruction-tuned model](https://huggingface.co/google/gemma-3-4b-it),
 but smaller models can be used for experimentation.
 
+Example routing (stub):
+
+```bash
+python evaluate_hybrid.py
+# Prompts with a JSON [REASON] block route to the HRM bridge:
+# "Answer this succinctly: [REASON] {\"task\":\"calc\",\"expression\":\"2+2*(3-1)\"} [ENDREASON]"
+```
+
+Note: the current implementation includes a minimal JSON parser and a "calc" test
+task to validate the routing path. Domain-specific HRM execution (e.g., Sudoku/ARC)
+will be wired next.
+
 ## W&B Integration 📈
 
 This project uses [Weights & Biases](https://wandb.ai/) for experiment tracking and metric visualization. Ensure you're logged in:
