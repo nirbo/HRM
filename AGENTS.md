@@ -74,7 +74,40 @@ Note: CUDA and FlashAttention setup is in `README.md`.
 - Ensure FlashAttention and CUDA/PyTorch versions match. Device mismatches are fixed by constructing HRM on the transformer’s device.
 
 ### Next Actions (Tomorrow)
-- Add CLI flags to `evaluate_hybrid.py` for `--hrm-checkpoint` and inline [REASON] prompts.
 - Train a small byte‑level HRM on a toy text set; verify `{"task":"text"}` path end‑to‑end.
 - Add streaming routing via HF StoppingCriteria (intercept [REASON] during generation).
 - Optional: expand handler registry (math scratchpad, code I/O schema), and add logging/metrics hooks.
+
+## Reasoning Engine Roadmap (Coding/Math/Science)
+
+- Current behavior: the transformer handles natural language, extracts `[REASON]... [ENDREASON]`, HRM computes the result, and the transformer verbalizes it. Adapters exist but are not yet used to exchange latent states.
+
+- Build a byte‑level text dataset:
+  - Prepare JSONL under `data/raw/text_tasks/{train,test}.jsonl` with `{"prompt":"...","target":"..."}`.
+  - Build processed data: `python dataset/build_text_dataset.py --input-dir data/raw/text_tasks --output-dir data/text-512 --seq-len 512`.
+  - Dataset semantics: `vocab_size=257` (PAD=0, bytes=1..256), `seq_len` typically 512–1024.
+
+- Train HRM on text (non‑autoregressive + ACT):
+  - Single node: `OMP_NUM_THREADS=8 python pretrain.py data_path=data/text-512 epochs=2000 eval_interval=200 vocab_size=257`.
+  - Multi‑GPU: `OMP_NUM_THREADS=8 torchrun --nproc-per-node 8 pretrain.py data_path=data/text-512 epochs=2000 eval_interval=200`.
+  - Ensure Hydra overrides match the dataset: `vocab_size=257`, `seq_len=512`, `halt_max_steps` (e.g., 8–16), and scale `hidden_size/num_heads/batch_size/lr` to budget.
+  - Monitor loss and eval metrics; checkpoints at `checkpoints/<project>/<run>/step_<N>`.
+
+- Evaluate `task:"text"` end‑to‑end:
+  - `python evaluate_hybrid.py --device cuda:0 --hrm-checkpoint checkpoints/<project>/<run>/step_<N> --prompt 'Answer: [REASON] {"task":"text","prompt":"2+2*(3-1) = "} [ENDREASON]'`.
+  - Expect meaningful outputs only after HRM text training.
+
+- Quality of life for outputs:
+  - Add deterministic generation: small `max_new_tokens`, `do_sample=False`, `temperature=0.0` to reduce chatter.
+  - Optionally trim echoed prompt and show only the continuation.
+  - Use an EOS convention in targets and stop decoding at EOS.
+
+- Deeper hybrid coupling (next iterations):
+  - Use `EncoderAdapter` to project transformer hidden states of the `[REASON]` span into HRM to seed computation; use `DecoderAdapter` to project HRM states back to guide the transformer.
+  - Implement streaming routing via HF `StoppingCriteria` to intercept `[REASON]` during generation, invoke HRM, then resume decoding.
+  - Expand handlers: keep `{"task":"text"}` as default; optionally add specialized math/code schemas with structured I/O.
+
+- Recommended config presets:
+  - Data: `vocab_size=257`, `seq_len` 512–1024 depending on tasks.
+  - HRM: `halt_max_steps` 8–16, `H/L_layers` 4–8, `hidden_size` 512–1024, `num_heads` 8–16.
+  - Training: watch `train/loss` and task‑specific eval metrics (exact match/BLEU, etc.).
