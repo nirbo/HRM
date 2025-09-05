@@ -43,11 +43,15 @@ class HybridHRMTransformer(nn.Module):
             hrm_cfg = config.hrm
             if hasattr(hrm_cfg, "model_dump"):
                 hrm_cfg = hrm_cfg.model_dump()
-            # Instantiate on the transformer's device to ensure non-persistent buffers
-            # (e.g., RoPE caches) are created on the correct device.
-            t_device = getattr(getattr(self.transformer, "model", None), "device", torch.device("cpu"))
-            with torch.device(str(t_device)):
-                self.hrm = HierarchicalReasoningModel_ACTV1(hrm_cfg)  # type: ignore
+            # Instantiate HRM and move it onto the transformer's device to keep all
+            # tensors/buffers aligned (prevents CPU/GPU mismatches during Sudoku/text routing).
+            self.hrm = HierarchicalReasoningModel_ACTV1(config_dict=hrm_cfg)
+            # Determine transformer's device (fall back to CPU if unavailable)
+            try:
+                t_device = next(self.transformer.model.parameters()).device  # type: ignore[attr-defined]
+            except Exception:
+                t_device = torch.device("cpu")
+            self.hrm.to(t_device)
 
         # Auto-infer adapter dims if not provided.
         t_dim = self._infer_transformer_hidden_dim()
@@ -189,8 +193,14 @@ class HybridHRMTransformer(nn.Module):
         else:
             raise ValueError("grid must be a 9x9 list or an 81-char string")
 
-        # Map to HRM tokens: 0..9 -> 1..10 (PAD=0)
         tokens = [v + 1 for v in flat]
+
+        # Match HRM seq_len by truncating/padding with PAD=0
+        seq_len = int(getattr(self.hrm.config, "seq_len", len(tokens)) or len(tokens))
+        if len(tokens) > seq_len:
+            tokens = tokens[:seq_len]
+        elif len(tokens) < seq_len:
+            tokens = tokens + [0] * (seq_len - len(tokens))
 
         device = next(self.hrm.parameters()).device
         inputs = torch.tensor(tokens, dtype=torch.int32, device=device).view(1, -1)
