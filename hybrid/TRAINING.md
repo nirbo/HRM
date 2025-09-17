@@ -25,12 +25,15 @@ Performs a single forward/backward pass with random data and prints the loss.
 PYTHONPATH=src uv run python -m hrm_lm.training.train \
   --dataset synthetic \
   --batch_size 4 \
+  --learning_rate 2.5e-4 \
+  --warmup_steps 50 \
   --steps 200 \
   --val_every 50 \
   --run_name arithmetic-demo \
   --checkpoint_limit 3 \
   --save_best_model \
   --mixed_precision bf16 \
+  --log_steps 20 \
   --grad_clip 1.0
 ```
 Key behaviors:
@@ -39,6 +42,8 @@ Key behaviors:
 - `--checkpoint_limit 3` keeps only the 3 newest `step_*.pt` files (FIFO rotation) while leaving `final.pt` intact.
 - `--save_best_model` maintains `runs/arithmetic-demo/best-model/best.pt`, updated whenever validation loss improves.
 - `--optimizer` defaults to `adamw`; pass `--optimizer adamw_8bit` (requires `pip install bitsandbytes`) for 8-bit weights.
+- `--learning_rate` and `--warmup_steps` let you control LR scheduling (linear warmup → constant).
+- `--log_steps` governs how often training metrics are emitted with Rich-formatted output.
 - Mixed precision (`bf16` or `fp16`) engages `torch.autocast`; gradient clipping applies after each backward pass.
 
 ### Loading a Custom Config
@@ -75,12 +80,17 @@ To add a custom dataset:
 | `--dataset` | `None` | Dataset loader name (currently `synthetic`). Required when training. |
 | `--batch_size` | config value | Overrides batch size used for training/validation batches. |
 | `--optimizer` | `adamw` | Optimizer choice (`adamw` or `adamw_8bit`; the latter requires `bitsandbytes`). |
-| `--steps` | `200` | Total optimization steps to run (resumes from last checkpoint if found). |
+| `--learning_rate` | config value | Override optimizer learning rate. |
+| `--warmup_steps` | `0` | Linear LR warmup steps before holding constant. |
+| `--steps` | config value | Total optimization steps; overrides `--epochs` when >0. |
+| `--epochs` | `0` | Number of epochs (computed from dataset size) when `--steps` ≤ 0. |
 | `--val_every` | `0` | Validation/checkpoint frequency in steps (disabled when `0`). |
 | `--save_dir` | `None` | Legacy manual checkpoint directory (overridden by `--run_name`). |
 | `--run_name` | `None` | Creates `runs/<run-name>/checkpoints/` (required for `--save_best_model`). |
 | `--checkpoint_limit` | `0` | Maximum number of `step_*.pt` checkpoints to retain (FIFO). `0` disables rotation. |
 | `--save_best_model` | *flag* | When set, saves lowest-validation-loss model to `runs/<run-name>/best-model/best.pt`. |
+| `--max_seq_len` | config value | Truncate encoder/decoder sequences to this length. |
+| `--log_steps` | `10` | Emit Rich-formatted training metrics every N steps. |
 | `--mixed_precision` | `none` | Precision mode: `none`, `bf16`, or `fp16` (fp16 requires CUDA). |
 | `--grad_clip` | `0.0` | L2 gradient clipping norm (disabled when ≤0). |
 

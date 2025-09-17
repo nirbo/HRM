@@ -1,16 +1,21 @@
-# toy trainer with dry-run
+# trainer with advanced logging and checkpointing
 import contextlib
+import math
 import os
 import random
+import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
 from omegaconf import OmegaConf
+from rich.console import Console
 
-from hrm_lm.data.synthetic import build_synthetic_dataset, pad_batch  # dataset utilities
+from hrm_lm.data.synthetic import build_synthetic_dataset, pad_batch
 from hrm_lm.models.hybrid import HRMLanguageModel
+
+console = Console()
 
 
 def set_seed(seed: int) -> None:
@@ -19,7 +24,7 @@ def set_seed(seed: int) -> None:
   torch.cuda.manual_seed_all(seed)
 
 
-def make_model(cfg):
+def make_model(cfg) -> HRMLanguageModel:
   model = HRMLanguageModel(
     vocab_size=cfg.model.vocab_size,
     d_model=cfg.model.d_model,
@@ -29,13 +34,12 @@ def make_model(cfg):
     max_dec_len=cfg.model.decoder.max_seq_len,
     hrm_cfg=dict(cfg.model.hrm),
     bridge_cfg=dict(cfg.bridge),
-    enc_backend=cfg.model.encoder.backend
+    enc_backend=cfg.model.encoder.backend,
   )
   return model
 
 
-def make_optimizer(name: str, model: nn.Module, cfg):
-  lr = cfg.optim.lr
+def make_optimizer(name: str, model: nn.Module, cfg, lr: float):
   betas = tuple(cfg.optim.betas)
   weight_decay = cfg.optim.weight_decay
   name = name.lower()
@@ -50,24 +54,23 @@ def make_optimizer(name: str, model: nn.Module, cfg):
   raise ValueError(f"Unsupported optimizer '{name}'. Choose from ['adamw', 'adamw_8bit'].")
 
 
-def demo_batch(cfg, device, batch_size):
-  batch = batch_size
+def demo_batch(cfg, device: torch.device, batch_size: int):
   seq_len = cfg.train.seq_len
   tgt_len = cfg.train.tgt_len
-  x = torch.randint(0, cfg.model.vocab_size, (batch, seq_len), device=device)
-  y_in = torch.randint(0, cfg.model.vocab_size, (batch, tgt_len), device=device)
-  y = torch.randint(0, cfg.model.vocab_size, (batch, tgt_len), device=device)
+  x = torch.randint(0, cfg.model.vocab_size, (batch_size, seq_len), device=device)
+  y_in = torch.randint(0, cfg.model.vocab_size, (batch_size, tgt_len), device=device)
+  y = torch.randint(0, cfg.model.vocab_size, (batch_size, tgt_len), device=device)
   return x, y_in, y
 
 
 def list_step_checkpoints(directory: Path) -> List[Tuple[int, Path]]:
   ckpts: List[Tuple[int, Path]] = []
   for path in directory.glob('step_*.pt'):
-    name = path.stem.split('_')
-    if len(name) != 2:
+    parts = path.stem.split('_')
+    if len(parts) != 2:
       continue
     try:
-      step = int(name[1])
+      step = int(parts[1])
     except ValueError:
       continue
     ckpts.append((step, path))
@@ -97,26 +100,59 @@ def enforce_checkpoint_limit(directory: Path, limit: int) -> None:
     return
   ckpts = list_step_checkpoints(directory)
   while len(ckpts) > limit:
-    step, path = ckpts.pop(0)
+    _, path = ckpts.pop(0)
     try:
       path.unlink()
     except FileNotFoundError:
       pass
 
 
-def build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, step: int, best_loss: float, val_loss: Optional[float]) -> dict:
+def build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, step: int, best_loss: float, val_loss: Optional[float], optimizer_name: str) -> dict:
   payload = {
     'state_dict': model.state_dict(),
     'optimizer': optimizer.state_dict(),
     'cfg': cfg_serializable,
     'step': step,
     'best_loss': best_loss,
+    'optimizer_name': optimizer_name,
   }
   if val_loss is not None:
     payload['val_loss'] = float(val_loss)
   if scaler is not None and scaler.is_enabled():
     payload['scaler'] = scaler.state_dict()
   return payload
+
+
+def gradient_norm(model: nn.Module) -> float:
+  total = 0.0
+  for param in model.parameters():
+    if param.grad is None:
+      continue
+    grad = param.grad.data
+    total += float(torch.sum(grad * grad))
+  return math.sqrt(total) if total > 0 else 0.0
+
+
+def format_eta(seconds: float) -> str:
+  if math.isinf(seconds) or seconds <= 0:
+    return '--:--'
+  minutes, _ = divmod(int(seconds + 0.5), 60)
+  hours, minutes = divmod(minutes, 60)
+  return f"{hours:02d}:{minutes:02d}"
+
+
+def format_speed(seconds_per_it: float) -> str:
+  if seconds_per_it <= 0:
+    return 'inf it/s'
+  if seconds_per_it >= 1.0:
+    return f"{seconds_per_it:.2f} s/it"
+  else:
+    return f"{1.0 / seconds_per_it:.2f} it/s"
+
+
+def set_learning_rate(optimizer, lr: float) -> None:
+  for group in optimizer.param_groups:
+    group['lr'] = lr
 
 
 def main():
@@ -128,7 +164,10 @@ def main():
   parser.add_argument('--dataset', default=None)
   parser.add_argument('--batch_size', type=int, default=None)
   parser.add_argument('--optimizer', default='adamw', choices=['adamw', 'adamw_8bit'])
-  parser.add_argument('--steps', type=int, default=200)
+  parser.add_argument('--learning_rate', type=float, default=None)
+  parser.add_argument('--warmup_steps', type=int, default=0)
+  parser.add_argument('--steps', type=int, default=0)
+  parser.add_argument('--epochs', type=int, default=0)
   parser.add_argument('--val_every', type=int, default=0)
   parser.add_argument('--save_dir', default=None)
   parser.add_argument('--mixed_precision', default='none')
@@ -136,23 +175,36 @@ def main():
   parser.add_argument('--checkpoint_limit', type=int, default=0)
   parser.add_argument('--run_name', default=None)
   parser.add_argument('--save_best_model', action='store_true')
+  parser.add_argument('--max_seq_len', type=int, default=None)
+  parser.add_argument('--log_steps', type=int, default=10)
   args = parser.parse_args()
 
   cfg = OmegaConf.load(args.config) if args.config else OmegaConf.load(Path(__file__).parent.parent / 'configs' / 'default.yaml')
   set_seed(cfg.train.seed)
 
   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-  model = make_model(cfg).to(device)
-  optimizer = make_optimizer(args.optimizer, model, cfg)
-
   effective_batch_size = args.batch_size if args.batch_size is not None else cfg.train.batch_size
   if effective_batch_size <= 0:
     raise ValueError('batch size must be positive')
+  cfg.train.batch_size = effective_batch_size
+
+  effective_seq_len = args.max_seq_len if args.max_seq_len is not None else cfg.train.seq_len
+  if effective_seq_len <= 0:
+    raise ValueError('max sequence length must be positive')
+  cfg.train.seq_len = effective_seq_len
+  cfg.train.tgt_len = effective_seq_len
+
+  base_lr = args.learning_rate if args.learning_rate is not None else cfg.optim.lr
+  if base_lr <= 0:
+    raise ValueError('learning rate must be positive')
+
+  model = make_model(cfg).to(device)
+  optimizer = make_optimizer(args.optimizer, model, cfg, base_lr)
 
   if args.dry_run:
     x, y_in, y = demo_batch(cfg, device, effective_batch_size)
     out = model(x, y_in, labels=y)
-    print('dry_run loss:', out['loss'].item())
+    console.print(f"dry_run loss: {out['loss'].item():.6f}")
     return
 
   save_dir: Optional[Path] = None
@@ -167,15 +219,16 @@ def main():
       best_dir.mkdir(parents=True, exist_ok=True)
   elif args.save_dir:
     if args.save_best_model:
-      raise ValueError('--save_best_model requires --run_name to place artifacts under runs/<run-name>/best-model/')
+      raise ValueError('--save_best_model requires --run_name to place artifacts under runs/<run-name>/best-model/.')
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
   else:
     if args.save_best_model:
-      raise ValueError('--save_best_model requires --run_name to place artifacts under runs/<run-name>/best-model/')
+      raise ValueError('--save_best_model requires --run_name to place artifacts under runs/<run-name>/best-model/.')
 
   if args.dataset == 'synthetic':
     tokenizer, dataset = build_synthetic_dataset(n=2000, seed=cfg.train.seed)
+    dataset_size = len(dataset)
 
     def data_iter():
       while True:
@@ -185,7 +238,14 @@ def main():
     iterator = data_iter()
     val_iterator = data_iter()
   else:
-    raise ValueError('dataset required for non-dry run')
+    raise ValueError('dataset required for training')
+
+  total_steps = args.steps if args.steps > 0 else 0
+  if total_steps <= 0:
+    if args.epochs <= 0:
+      raise ValueError('Specify a positive --steps or --epochs')
+    steps_per_epoch = max(1, math.ceil(dataset_size / effective_batch_size))
+    total_steps = steps_per_epoch * args.epochs
 
   mp_mode = args.mixed_precision.lower()
   use_autocast = mp_mode in ('fp16', 'bf16')
@@ -211,18 +271,38 @@ def main():
         scaler.load_state_dict(data['scaler'])
       best_loss = float(data.get('best_loss', float('inf')))
       start_step = int(data.get('step', resume_step))
-      print(f'Resuming from {resume_path} (step {start_step})')
-      if start_step >= args.steps:
-        print(f'All {args.steps} steps already completed; exiting.')
+      console.print(f"[bold yellow]Resuming from {resume_path} (step {start_step})[/bold yellow]")
+      if start_step >= total_steps:
+        console.print(f"[bold green]All {total_steps} steps already completed; exiting.[/bold green]")
         return
 
-  for step in range(start_step, args.steps):
+  warmup_steps = max(0, args.warmup_steps)
+  log_steps = max(1, args.log_steps)
+  run_start_step = start_step
+  run_start_time = time.time()
+
+  def adjust_lr(global_step: int) -> float:
+    if warmup_steps == 0:
+      lr = base_lr
+    else:
+      warmup_ratio = min(global_step / warmup_steps, 1.0)
+      lr = base_lr * warmup_ratio
+    set_learning_rate(optimizer, lr)
+    return lr
+
+  def truncate_to_max_length(tensor: torch.Tensor, length: int) -> torch.Tensor:
+    return tensor[:, :length] if tensor.size(1) > length else tensor
+
+  for step in range(start_step, total_steps):
+    global_step = step + 1
+    current_lr = adjust_lr(global_step)
+
     enc, dec_in, labels, enc_mask, dec_mask = next(iterator)
-    enc = enc.to(device)
-    dec_in = dec_in.to(device)
-    labels = labels.to(device)
-    enc_mask = enc_mask.to(device)
-    dec_mask = dec_mask.to(device)
+    enc = truncate_to_max_length(enc, effective_seq_len).to(device)
+    dec_in = truncate_to_max_length(dec_in, effective_seq_len).to(device)
+    labels = truncate_to_max_length(labels, effective_seq_len).to(device)
+    enc_mask = truncate_to_max_length(enc_mask, effective_seq_len).to(device)
+    dec_mask = truncate_to_max_length(dec_mask, effective_seq_len).to(device)
 
     optimizer.zero_grad(set_to_none=True)
     ctx = torch.autocast(**autocast_kwargs) if autocast_kwargs else contextlib.nullcontext()
@@ -232,51 +312,69 @@ def main():
 
     if scaler is not None and scaler.is_enabled():
       scaler.scale(loss).backward()
-      if args.grad_clip > 0:
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+      scaler.unscale_(optimizer)
+    else:
+      loss.backward()
+
+    grad_norm = gradient_norm(model)
+
+    if args.grad_clip > 0:
+      torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+
+    if scaler is not None and scaler.is_enabled():
       scaler.step(optimizer)
       scaler.update()
     else:
-      loss.backward()
-      if args.grad_clip > 0:
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
       optimizer.step()
 
-    global_step = step + 1
-    if global_step % 10 == 0:
-      print(f'step {global_step} loss {loss.item():.4f}')
+    steps_completed = global_step - run_start_step
+    elapsed = time.time() - run_start_time
+    time_per_step = elapsed / steps_completed if steps_completed > 0 else float('inf')
+    eta = format_eta(time_per_step * (total_steps - global_step))
+    speed = format_speed(time_per_step)
+
+    if global_step % log_steps == 0 or global_step == total_steps:
+      parts = [
+        f"[bold cyan]step: {global_step}/{total_steps}[/bold cyan]",
+        f"[bold green]loss: {loss.item():.15f}[/bold green]",
+        f"[bold yellow]grad-norm: {grad_norm:.15f}[/bold yellow]",
+        f"[bold blue]lr: {current_lr:.15f}[/bold blue]",
+        f"[bold magenta]ETA: {eta}[/bold magenta]",
+        f"[bold white]speed: {speed}[/bold white]",
+      ]
+      console.print(', '.join(parts))
 
     if args.val_every > 0 and global_step % args.val_every == 0:
       model.eval()
-      with torch.no_grad():
-        v_enc, v_dec_in, v_labels, v_enc_mask, v_dec_mask = next(val_iterator)
-        v_enc = v_enc.to(device)
-        v_dec_in = v_dec_in.to(device)
-        v_labels = v_labels.to(device)
-        v_enc_mask = v_enc_mask.to(device)
-        v_dec_mask = v_dec_mask.to(device)
-        v_out = model(v_enc, v_dec_in, enc_attn_mask=v_enc_mask, dec_attn_mask=v_dec_mask, labels=v_labels)
-        v_loss = float(v_out['loss'].item())
-      print(f'val step {global_step} loss {v_loss:.4f}')
+      with console.status(f"[bold]Evaluating (step {global_step}/{total_steps})...", spinner='line'):
+        with torch.no_grad():
+          v_enc, v_dec_in, v_labels, v_enc_mask, v_dec_mask = next(val_iterator)
+          v_enc = truncate_to_max_length(v_enc, effective_seq_len).to(device)
+          v_dec_in = truncate_to_max_length(v_dec_in, effective_seq_len).to(device)
+          v_labels = truncate_to_max_length(v_labels, effective_seq_len).to(device)
+          v_enc_mask = truncate_to_max_length(v_enc_mask, effective_seq_len).to(device)
+          v_dec_mask = truncate_to_max_length(v_dec_mask, effective_seq_len).to(device)
+          v_out = model(v_enc, v_dec_in, enc_attn_mask=v_enc_mask, dec_attn_mask=v_dec_mask, labels=v_labels)
+          v_loss = float(v_out['loss'].item())
+      console.print(f"[bold magenta]eval[/bold magenta]: step {global_step}/{total_steps}, loss: {v_loss:.15f}")
       model.train()
 
       if args.save_best_model and v_loss < best_loss:
         best_loss = v_loss
         if best_dir is not None:
-          best_payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, global_step, best_loss, v_loss)
-          best_path = best_dir / 'best.pt'
-          torch.save(best_payload, best_path)
+          best_payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, global_step, best_loss, v_loss, args.optimizer)
+          torch.save(best_payload, best_dir / 'best.pt')
 
       if save_dir is not None:
-        payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, global_step, best_loss, v_loss)
+        payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, global_step, best_loss, v_loss, args.optimizer)
         ckpt_path = save_dir / f'step_{global_step}.pt'
         torch.save(payload, ckpt_path)
         enforce_checkpoint_limit(save_dir, args.checkpoint_limit)
 
   if save_dir is not None:
-    final_payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, args.steps, best_loss, None)
+    final_payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, total_steps, best_loss, None, args.optimizer)
     torch.save(final_payload, save_dir / 'final.pt')
+
 
 if __name__ == '__main__':
   main()

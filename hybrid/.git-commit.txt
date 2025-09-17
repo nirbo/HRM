@@ -1,11 +1,13 @@
-Add optimizer selection to trainer
+Extend trainer scheduling, logging, and CLI flexibility
 
 Summary
-- Introduced `--optimizer` flag with support for standard AdamW and bitsandbytes AdamW8bit via `make_optimizer` helper.
-- Added documentation for optimizer choices, including installation note for 8-bit mode.
-- Validated via dry-run, sample training run, and pytest.
+- Rewrote trainer loop with Rich-based logging, linear warmup, resume-aware scheduling, and total-steps/epochs support.
+- Added CLI overrides for learning rate, warmup steps, epochs, max sequence length, log frequency, and optimizer choice (AdamW / AdamW8bit).
+- Improved dataset truncation, ETA/speed reporting, gradient norm metrics, and evaluation messaging.
+- Documented new flags and workflow, added Rich dependency, and validated via dry run, sample training run, and pytest.
 
 Files
-- src/hrm_lm/training/train.py — optimizer factory, CLI flag usage.
-- TRAINING.md — documented optimizer options.
-- llm.state — updated log (not committed).
+- src/hrm_lm/training/train.py — major update (optimizer selection, warmup, epochs, rich logging, seq truncation, etc.).
+- TRAINING.md — documented new CLI options and logging behavior.
+- requirements.txt — added `rich` dependency.
+- llm.state — updated task log (not committed).
