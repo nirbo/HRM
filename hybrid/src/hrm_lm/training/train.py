@@ -34,8 +34,8 @@ def make_model(cfg):
   return model
 
 
-def demo_batch(cfg, device):
-  batch = cfg.train.batch_size
+def demo_batch(cfg, device, batch_size):
+  batch = batch_size
   seq_len = cfg.train.seq_len
   tgt_len = cfg.train.tgt_len
   x = torch.randint(0, cfg.model.vocab_size, (batch, seq_len), device=device)
@@ -110,6 +110,7 @@ def main():
   parser.add_argument('--config', default=None)
   parser.add_argument('--dry_run', action='store_true')
   parser.add_argument('--dataset', default=None)
+  parser.add_argument('--batch_size', type=int, default=None)
   parser.add_argument('--steps', type=int, default=200)
   parser.add_argument('--val_every', type=int, default=0)
   parser.add_argument('--save_dir', default=None)
@@ -127,8 +128,12 @@ def main():
   model = make_model(cfg).to(device)
   optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.optim.lr, betas=tuple(cfg.optim.betas), weight_decay=cfg.optim.weight_decay)
 
+  effective_batch_size = args.batch_size if args.batch_size is not None else cfg.train.batch_size
+  if effective_batch_size <= 0:
+    raise ValueError('batch size must be positive')
+
   if args.dry_run:
-    x, y_in, y = demo_batch(cfg, device)
+    x, y_in, y = demo_batch(cfg, device, effective_batch_size)
     out = model(x, y_in, labels=y)
     print('dry_run loss:', out['loss'].item())
     return
@@ -157,7 +162,7 @@ def main():
 
     def data_iter():
       while True:
-        batch = [random.choice(dataset) for _ in range(cfg.train.batch_size)]
+        batch = [random.choice(dataset) for _ in range(effective_batch_size)]
         yield pad_batch(batch)
 
     iterator = data_iter()

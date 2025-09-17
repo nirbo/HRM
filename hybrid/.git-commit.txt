@@ -1,10 +1,11 @@
-Make --dry_run a flag
+Add batch size override for trainer
 
 Summary
-- Converted trainer `--dry_run` argument to a boolean flag (`action='store_true'`) and updated doc examples accordingly.
-- Re-ran dry-run command and pytest to verify usage remains correct.
+- Introduced `--batch_size` CLI flag that supersedes config batch size for training/validation batches.
+- Updated documentation to show new usage and clarified that grad accumulation is not yet configurable.
+- Verified via dry-run with custom batch size, full synthetic run, and pytest.
 
 Files
-- src/hrm_lm/training/train.py — CLI flag update.
-- TRAINING.md — refreshed dry-run examples to match flag usage.
-- llm.state — updated task log (not for commit).
+- src/hrm_lm/training/train.py — batch-size override logic and CLI flag.
+- TRAINING.md — refreshed examples and CLI table entry.
+- llm.state — updated log (unincluded).

@@ -23,8 +23,8 @@ Performs a single forward/backward pass with random data and prints the loss.
 ### Synthetic Arithmetic Training with Checkpoint Management
 ```bash
 PYTHONPATH=src uv run python -m hrm_lm.training.train \
-  \
   --dataset synthetic \
+  --batch_size 4 \
   --steps 200 \
   --val_every 50 \
   --run_name arithmetic-demo \
@@ -71,7 +71,8 @@ To add a custom dataset:
 | --- | --- | --- |
 | `--config` | `src/hrm_lm/configs/default.yaml` | YAML config describing model/optim/train settings. |
 | `--dry_run` | `1` | When `1`, runs a single synthetic batch and exits; set to `0` for training. |
-| `--dataset` | `None` | Dataset loader name (currently `synthetic`). Required when `--dry_run 0`. |
+| `--dataset` | `None` | Dataset loader name (currently `synthetic`). Required when training. |
+| `--batch_size` | config value | Overrides batch size used for training/validation batches. |
 | `--steps` | `200` | Total optimization steps to run (resumes from last checkpoint if found). |
 | `--val_every` | `0` | Validation/checkpoint frequency in steps (disabled when `0`). |
 | `--save_dir` | `None` | Legacy manual checkpoint directory (overridden by `--run_name`). |
