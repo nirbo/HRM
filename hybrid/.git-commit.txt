@@ -1,12 +1,9 @@
-Refine trainer logging colors and suppress transformer warning
+Convert FineWeb derivative into HRM-LM token dataset
 
 Summary
-- Swapped training/eval Rich colors for darker palette, shortened metric labels, and removed bright/white tones.
-- Added warnings filter plus boolean masks to silence Nested Tensor warnings without changing behaviour.
-- Disabled nested tensor usage in custom transformer layers and ensured speed formatting stays on one line.
-- Verified via dry run, synthetic run, and pytest.
+- Added `scripts/prepare_language_dataset.py` to stream parquet rows into token triplets with the simple tokenizer, producing `train/val` JSONL files plus vocab metadata.
+- Documented dataset preparation workflow in `TRAINING.md` and added required deps (`pyarrow`, `pandas`) to `requirements.txt`.
+- Introduced basic `.gitignore` entries for datasets and run artifacts.
 
-Files
-- src/hrm_lm/training/train.py — logging tweaks, mask handling, warning filter.
-- src/hrm_lm/models/transformer_layers.py — guard nested tensor usage.
-- llm.state — task log update (not part of commit).
+Outputs
+- Generated `datasets/anothy1-fineweb-edu-cleaned-simplified/processed/{train,val}.jsonl`, `tokenizer.json`, and `meta.json` (kept untracked).

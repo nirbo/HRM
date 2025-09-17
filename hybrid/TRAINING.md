@@ -14,6 +14,21 @@ This document explains how to launch the hybrid HRM–LM trainer, how datasets a
 
 ## Running the Trainer
 
+## Dataset Preparation
+
+To convert parquet dumps (like the FineWeb derivative) into HRM-LM-ready token triplets, run:
+
+```bash
+PYTHONPATH=src uv run python scripts/prepare_language_dataset.py \
+  --source datasets/anothy1-fineweb-edu-cleaned-simplified \
+  --dest datasets/anothy1-fineweb-edu-cleaned-simplified/processed \
+  --max-seq-len 256 \
+  --val-ratio 0.02
+```
+
+This produces `train.jsonl`, `val.jsonl`, a `tokenizer.json`, and `meta.json` with corpus statistics. Each line stores `encoder_ids`, `decoder_input_ids`, and `labels` arrays of integer tokens ready for loading.
+
+
 ### Dry Run (sanity check)
 ```bash
 PYTHONPATH=src uv run python -m hrm_lm.training.train --dry_run
