@@ -1,0 +1,37 @@
+# 2-space indent
+model:
+  vocab_size: 32000
+  d_model: 512
+  n_heads: 8
+  dropout: 0.0
+  encoder:
+    backend: transformer  # transformer | mamba2
+    n_layers: 8
+    max_seq_len: 2048
+  decoder:
+    n_layers: 8
+    max_seq_len: 1024
+  hrm:
+    d_model: 512
+    h_len: 8
+    l_len: 64
+    h_layers: 2
+    l_layers: 2
+    h_cycles: 4
+    l_steps: 8
+    approx_grad: one_step  # one_step | bptt
+    use_halting: false
+    out_dim: 512
+bridge:
+  type: prefix  # prefix | cross_attn
+  prefix_len: 8
+optim:
+  lr: 2.5e-4
+  weight_decay: 0.0
+  betas: [0.9, 0.95]
+train:
+  seed: 1337
+  batch_size: 2
+  seq_len: 256
+  tgt_len: 64
+  mixed_precision: bf16
