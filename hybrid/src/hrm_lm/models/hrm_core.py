@@ -66,14 +66,16 @@ class HRMCore(nn.Module):
         L = self._run_L(L, H, lin)
         H = self._run_H(H, L, hin)
 
-      z = self._readout(H)
-      z_list.append(z)
+      z_raw = self._readout(H)  # compute raw latent
+      z_norm = self.out_norm(z_raw)  # normalize latent
+      z_proj = self.out(z_norm)  # project to decoder space
+      z_list.append(z_proj)  # store projected latent
       if self.use_halting:
         p = torch.sigmoid(self.halt_head(H[:,0]))
         halting_probs.append(p)
 
-    z_final = z_list[-1]
-    out = self.out(self.out_norm(z_final))
+    z_final = z_list[-1]  # pick last projected latent
+    out = z_final  # final HRM output
 
     aux = {'z_per_cycle': z_list, 'halt': halting_probs} if return_all else None
     return out, aux

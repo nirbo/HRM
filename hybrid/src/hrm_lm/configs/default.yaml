@@ -21,7 +21,10 @@ model:
     l_steps: 8
     approx_grad: one_step  # one_step | bptt
     use_halting: false
+    halting_weight: 0.01
     out_dim: 512
+    deep_supervision: false
+    ds_weight: 0.2
 bridge:
   type: prefix  # prefix | cross_attn
   prefix_len: 8

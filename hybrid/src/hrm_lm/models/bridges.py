@@ -26,3 +26,10 @@ class HRMToCrossAttnBridge(nn.Module):
     self.proj = nn.Linear(d_model, d_model)
   def forward(self, z):
     return self.proj(z).unsqueeze(1)
+
+class HRMGate(nn.Module):
+  def __init__(self, d_model):
+    super().__init__()
+    self.lin = nn.Linear(d_model, 1)  # linear gate
+  def forward(self, z):
+    return torch.sigmoid(self.lin(z))  # produce gate in [0,1]
