@@ -1,11 +1,11 @@
-Align decoder targets and modernize fp16 scaler
+Trainer QoL: checkpoint rotation, auto-resume, run naming, best model tracking
 
 Summary
-- Adjust synthetic dataset builder so decoder inputs (drop EOS) and labels (drop BOS) share sequence length, fixing cross-entropy shape mismatch during training.
-- Switch trainer to `torch.amp.GradScaler` with explicit fp16 enable flag, eliminating deprecation warning.
-- Verified via `uv run` synthetic training (200 steps) plus full pytest run.
+- Added CLI flags for run naming, checkpoint rotation, and best-model persistence; checkpoints now auto-resume when rerun.
+- Implemented checkpoint FIFO limit, best-model directory maintenance, and automatic detector for completed runs.
+- Documented new workflow, including auto-resume semantics and extended CLI table.
 
 Files
-- src/hrm_lm/data/synthetic.py — align decoder/label sequences.
-- src/hrm_lm/training/train.py — updated GradScaler logic.
-- .git-commit.txt — summary for this commit.
+- src/hrm_lm/training/train.py — CLI updates, auto-resume, checkpoint limit enforcement, best-model saver.
+- TRAINING.md — refreshed instructions covering run names, rotation, and new parameters.
+- llm.state — updated task log (not intended for commit).
