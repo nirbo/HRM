@@ -21,6 +21,14 @@ class TransformerEncoder(nn.Module):
   def __init__(self, d_model, n_heads, n_layers, dropout=0.0):
     super().__init__()
     layer = nn.TransformerEncoderLayer(d_model, n_heads, dim_feedforward=d_model*4, dropout=dropout, batch_first=True)
+    try:
+      layer._use_nested_tensor = False  # type: ignore[attr-defined]
+    except AttributeError:
+      pass
+    try:
+      layer._set_use_nested_tensor(False)  # type: ignore[attr-defined]
+    except AttributeError:
+      pass
     self.enc = nn.TransformerEncoder(layer, n_layers)
 
   def forward(self, x, src_key_padding_mask=None):
@@ -30,6 +38,14 @@ class TransformerDecoder(nn.Module):
   def __init__(self, d_model, n_heads, n_layers, dropout=0.0):
     super().__init__()
     layer = nn.TransformerDecoderLayer(d_model, n_heads, dim_feedforward=d_model*4, dropout=dropout, batch_first=True)
+    try:
+      layer._use_nested_tensor = False  # type: ignore[attr-defined]
+    except AttributeError:
+      pass
+    try:
+      layer._set_use_nested_tensor(False)  # type: ignore[attr-defined]
+    except AttributeError:
+      pass
     self.dec = nn.TransformerDecoder(layer, n_layers)
 
   def forward(self, tgt, memory, tgt_key_padding_mask=None, memory_key_padding_mask=None):

@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+import warnings
 import torch
 import torch.nn as nn
 from omegaconf import OmegaConf
@@ -15,7 +16,8 @@ from rich.console import Console
 from hrm_lm.data.synthetic import build_synthetic_dataset, pad_batch
 from hrm_lm.models.hybrid import HRMLanguageModel
 
-console = Console()
+warnings.filterwarnings('ignore', message='.*Nested Tensor.*')
+console = Console(highlight=False)
 
 
 def set_seed(seed: int) -> None:
@@ -145,9 +147,9 @@ def format_speed(seconds_per_it: float) -> str:
   if seconds_per_it <= 0:
     return 'inf it/s'
   if seconds_per_it >= 1.0:
-    return f"{seconds_per_it:.2f} s/it"
+    return f"{seconds_per_it:.2f}s/it"
   else:
-    return f"{1.0 / seconds_per_it:.2f} it/s"
+    return f"{1.0 / seconds_per_it:.2f}it/s"
 
 
 def set_learning_rate(optimizer, lr: float) -> None:
@@ -204,7 +206,7 @@ def main():
   if args.dry_run:
     x, y_in, y = demo_batch(cfg, device, effective_batch_size)
     out = model(x, y_in, labels=y)
-    console.print(f"dry_run loss: {out['loss'].item():.6f}")
+    console.print(f'[chartreuse4]dry_run loss:[/chartreuse4] {out['loss'].item():.6f}')
     return
 
   save_dir: Optional[Path] = None
@@ -301,8 +303,8 @@ def main():
     enc = truncate_to_max_length(enc, effective_seq_len).to(device)
     dec_in = truncate_to_max_length(dec_in, effective_seq_len).to(device)
     labels = truncate_to_max_length(labels, effective_seq_len).to(device)
-    enc_mask = truncate_to_max_length(enc_mask, effective_seq_len).to(device)
-    dec_mask = truncate_to_max_length(dec_mask, effective_seq_len).to(device)
+    enc_mask = truncate_to_max_length(enc_mask, effective_seq_len).to(device).bool()
+    dec_mask = truncate_to_max_length(dec_mask, effective_seq_len).to(device).bool()
 
     optimizer.zero_grad(set_to_none=True)
     ctx = torch.autocast(**autocast_kwargs) if autocast_kwargs else contextlib.nullcontext()
@@ -335,28 +337,28 @@ def main():
 
     if global_step % log_steps == 0 or global_step == total_steps:
       parts = [
-        f"[bold cyan]step: {global_step}/{total_steps}[/bold cyan]",
-        f"[bold green]loss: {loss.item():.15f}[/bold green]",
-        f"[bold yellow]grad-norm: {grad_norm:.15f}[/bold yellow]",
-        f"[bold blue]lr: {current_lr:.15f}[/bold blue]",
-        f"[bold magenta]ETA: {eta}[/bold magenta]",
-        f"[bold white]speed: {speed}[/bold white]",
+        f'[grey70]step {global_step}/{total_steps}[/grey70]',
+        f'[chartreuse4]loss {loss.item():.6f}[/chartreuse4]',
+        f'[steel_blue]grad {grad_norm:.6f}[/steel_blue]',
+        f'[dark_orange3]lr {current_lr:.6f}[/dark_orange3]',
+        f'[orchid]eta {eta}[/orchid]',
+        f'[medium_spring_green]{speed}[/medium_spring_green]',
       ]
-      console.print(', '.join(parts))
+      console.print(' | '.join(parts), soft_wrap=False, overflow='crop')
 
     if args.val_every > 0 and global_step % args.val_every == 0:
       model.eval()
-      with console.status(f"[bold]Evaluating (step {global_step}/{total_steps})...", spinner='line'):
+      with console.status(f'[grey58]eval step {global_step}/{total_steps}...[/grey58]', spinner='line'):
         with torch.no_grad():
           v_enc, v_dec_in, v_labels, v_enc_mask, v_dec_mask = next(val_iterator)
           v_enc = truncate_to_max_length(v_enc, effective_seq_len).to(device)
           v_dec_in = truncate_to_max_length(v_dec_in, effective_seq_len).to(device)
           v_labels = truncate_to_max_length(v_labels, effective_seq_len).to(device)
-          v_enc_mask = truncate_to_max_length(v_enc_mask, effective_seq_len).to(device)
-          v_dec_mask = truncate_to_max_length(v_dec_mask, effective_seq_len).to(device)
+          v_enc_mask = truncate_to_max_length(v_enc_mask, effective_seq_len).to(device).bool()
+          v_dec_mask = truncate_to_max_length(v_dec_mask, effective_seq_len).to(device).bool()
           v_out = model(v_enc, v_dec_in, enc_attn_mask=v_enc_mask, dec_attn_mask=v_dec_mask, labels=v_labels)
           v_loss = float(v_out['loss'].item())
-      console.print(f"[bold magenta]eval[/bold magenta]: step {global_step}/{total_steps}, loss: {v_loss:.15f}")
+      console.print(f'[orchid]eval:[/orchid] step {global_step}/{total_steps}, loss: {v_loss:.6f}')
       model.train()
 
       if args.save_best_model and v_loss < best_loss:

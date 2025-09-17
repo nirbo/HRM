@@ -1,13 +1,12 @@
-Extend trainer scheduling, logging, and CLI flexibility
+Refine trainer logging colors and suppress transformer warning
 
 Summary
-- Rewrote trainer loop with Rich-based logging, linear warmup, resume-aware scheduling, and total-steps/epochs support.
-- Added CLI overrides for learning rate, warmup steps, epochs, max sequence length, log frequency, and optimizer choice (AdamW / AdamW8bit).
-- Improved dataset truncation, ETA/speed reporting, gradient norm metrics, and evaluation messaging.
-- Documented new flags and workflow, added Rich dependency, and validated via dry run, sample training run, and pytest.
+- Swapped training/eval Rich colors for darker palette, shortened metric labels, and removed bright/white tones.
+- Added warnings filter plus boolean masks to silence Nested Tensor warnings without changing behaviour.
+- Disabled nested tensor usage in custom transformer layers and ensured speed formatting stays on one line.
+- Verified via dry run, synthetic run, and pytest.
 
 Files
-- src/hrm_lm/training/train.py — major update (optimizer selection, warmup, epochs, rich logging, seq truncation, etc.).
-- TRAINING.md — documented new CLI options and logging behavior.
-- requirements.txt — added `rich` dependency.
-- llm.state — updated task log (not committed).
+- src/hrm_lm/training/train.py — logging tweaks, mask handling, warning filter.
+- src/hrm_lm/models/transformer_layers.py — guard nested tensor usage.
+- llm.state — task log update (not part of commit).
