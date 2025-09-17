@@ -72,7 +72,8 @@ def main():
   mp_mode = args.mixed_precision.lower()  # normalize mixed precision mode
   use_autocast = mp_mode in ('fp16', 'bf16')  # decide if autocast is needed
   autocast_dtype = torch.float16 if mp_mode == 'fp16' else (torch.bfloat16 if mp_mode == 'bf16' else None)  # select dtype
-  scaler = torch.cuda.amp.GradScaler(enabled=(mp_mode == 'fp16' and device.type == 'cuda'))  # fp16 scaler
+  fp16_enabled = mp_mode == 'fp16' and device.type == 'cuda'  # fp16 active only on CUDA
+  scaler = torch.amp.GradScaler('cuda', enabled=fp16_enabled)  # fp16 scaler
   autocast_kwargs = {'device_type': device.type, 'dtype': autocast_dtype} if (use_autocast and autocast_dtype is not None) else None  # autocast args
   if args.save_dir:
     os.makedirs(args.save_dir, exist_ok=True)  # ensure checkpoint dir exists

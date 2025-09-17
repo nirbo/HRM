@@ -24,8 +24,8 @@ def build_synthetic_dataset(n: int = 1000, seed: int = 1337) -> Tuple[SimpleToke
   for question, answer in pairs:  # encode each pair
     enc = tokenizer.encode(question, add_specials=True)  # encode question
     dec = tokenizer.encode(answer, add_specials=True)  # encode answer
-    decoder_in = [tokenizer.bos_id] + dec[1:-1]  # build decoder input
-    labels = dec  # labels include eos token
+    decoder_in = dec[:-1]  # decoder input includes BOS and drops EOS
+    labels = dec[1:]  # labels start after BOS and keep EOS
     data.append((enc, decoder_in, labels))  # store example
   return tokenizer, data  # return tokenizer and dataset
 

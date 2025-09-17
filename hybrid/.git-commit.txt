@@ -1,8 +1,11 @@
-Fix README Mermaid diagram label so GitHub renders architecture flowchart
+Align decoder targets and modernize fp16 scaler
 
 Summary
-- Replace the CLS node label to avoid nested closing bracket that broke GitHub Mermaid parsing.
-- Diagram now renders correctly while retaining architecture context.
+- Adjust synthetic dataset builder so decoder inputs (drop EOS) and labels (drop BOS) share sequence length, fixing cross-entropy shape mismatch during training.
+- Switch trainer to `torch.amp.GradScaler` with explicit fp16 enable flag, eliminating deprecation warning.
+- Verified via `uv run` synthetic training (200 steps) plus full pytest run.
 
 Files
-- README.md — adjust HRM diagram label (`CLS Pool`).
+- src/hrm_lm/data/synthetic.py — align decoder/label sequences.
+- src/hrm_lm/training/train.py — updated GradScaler logic.
+- .git-commit.txt — summary for this commit.
