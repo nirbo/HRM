@@ -34,6 +34,22 @@ def make_model(cfg):
   return model
 
 
+def make_optimizer(name: str, model: nn.Module, cfg):
+  lr = cfg.optim.lr
+  betas = tuple(cfg.optim.betas)
+  weight_decay = cfg.optim.weight_decay
+  name = name.lower()
+  if name == 'adamw':
+    return torch.optim.AdamW(model.parameters(), lr=lr, betas=betas, weight_decay=weight_decay)
+  if name == 'adamw_8bit':
+    try:
+      import bitsandbytes as bnb  # type: ignore
+    except ImportError as exc:
+      raise ImportError('bitsandbytes is required for --optimizer adamw_8bit. Install via `pip install bitsandbytes`.') from exc
+    return bnb.optim.AdamW8bit(model.parameters(), lr=lr, betas=betas, weight_decay=weight_decay)
+  raise ValueError(f"Unsupported optimizer '{name}'. Choose from ['adamw', 'adamw_8bit'].")
+
+
 def demo_batch(cfg, device, batch_size):
   batch = batch_size
   seq_len = cfg.train.seq_len
@@ -111,6 +127,7 @@ def main():
   parser.add_argument('--dry_run', action='store_true')
   parser.add_argument('--dataset', default=None)
   parser.add_argument('--batch_size', type=int, default=None)
+  parser.add_argument('--optimizer', default='adamw', choices=['adamw', 'adamw_8bit'])
   parser.add_argument('--steps', type=int, default=200)
   parser.add_argument('--val_every', type=int, default=0)
   parser.add_argument('--save_dir', default=None)
@@ -126,7 +143,7 @@ def main():
 
   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
   model = make_model(cfg).to(device)
-  optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.optim.lr, betas=tuple(cfg.optim.betas), weight_decay=cfg.optim.weight_decay)
+  optimizer = make_optimizer(args.optimizer, model, cfg)
 
   effective_batch_size = args.batch_size if args.batch_size is not None else cfg.train.batch_size
   if effective_batch_size <= 0:

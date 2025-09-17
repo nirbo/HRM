@@ -1,11 +1,11 @@
-Add batch size override for trainer
+Add optimizer selection to trainer
 
 Summary
-- Introduced `--batch_size` CLI flag that supersedes config batch size for training/validation batches.
-- Updated documentation to show new usage and clarified that grad accumulation is not yet configurable.
-- Verified via dry-run with custom batch size, full synthetic run, and pytest.
+- Introduced `--optimizer` flag with support for standard AdamW and bitsandbytes AdamW8bit via `make_optimizer` helper.
+- Added documentation for optimizer choices, including installation note for 8-bit mode.
+- Validated via dry-run, sample training run, and pytest.
 
 Files
-- src/hrm_lm/training/train.py — batch-size override logic and CLI flag.
-- TRAINING.md — refreshed examples and CLI table entry.
-- llm.state — updated log (unincluded).
+- src/hrm_lm/training/train.py — optimizer factory, CLI flag usage.
+- TRAINING.md — documented optimizer options.
+- llm.state — updated log (not committed).

@@ -38,6 +38,7 @@ Key behaviors:
 - The trainer automatically resumes from the most recent checkpoint inside that directory (no extra flags needed).
 - `--checkpoint_limit 3` keeps only the 3 newest `step_*.pt` files (FIFO rotation) while leaving `final.pt` intact.
 - `--save_best_model` maintains `runs/arithmetic-demo/best-model/best.pt`, updated whenever validation loss improves.
+- `--optimizer` defaults to `adamw`; pass `--optimizer adamw_8bit` (requires `pip install bitsandbytes`) for 8-bit weights.
 - Mixed precision (`bf16` or `fp16`) engages `torch.autocast`; gradient clipping applies after each backward pass.
 
 ### Loading a Custom Config
@@ -73,6 +74,7 @@ To add a custom dataset:
 | `--dry_run` | `1` | When `1`, runs a single synthetic batch and exits; set to `0` for training. |
 | `--dataset` | `None` | Dataset loader name (currently `synthetic`). Required when training. |
 | `--batch_size` | config value | Overrides batch size used for training/validation batches. |
+| `--optimizer` | `adamw` | Optimizer choice (`adamw` or `adamw_8bit`; the latter requires `bitsandbytes`). |
 | `--steps` | `200` | Total optimization steps to run (resumes from last checkpoint if found). |
 | `--val_every` | `0` | Validation/checkpoint frequency in steps (disabled when `0`). |
 | `--save_dir` | `None` | Legacy manual checkpoint directory (overridden by `--run_name`). |
