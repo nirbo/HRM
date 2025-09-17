@@ -16,14 +16,14 @@ This document explains how to launch the hybrid HRM–LM trainer, how datasets a
 
 ### Dry Run (sanity check)
 ```bash
-PYTHONPATH=src uv run python -m hrm_lm.training.train --dry_run 1
+PYTHONPATH=src uv run python -m hrm_lm.training.train --dry_run
 ```
 Performs a single forward/backward pass with random data and prints the loss.
 
 ### Synthetic Arithmetic Training with Checkpoint Management
 ```bash
 PYTHONPATH=src uv run python -m hrm_lm.training.train \
-  --dry_run 0 \
+  \
   --dataset synthetic \
   --steps 200 \
   --val_every 50 \
@@ -42,7 +42,7 @@ Key behaviors:
 
 ### Loading a Custom Config
 ```bash
-PYTHONPATH=src uv run python -m hrm_lm.training.train --config path/to/config.yaml --dataset synthetic --dry_run 0 --run_name custom-run
+PYTHONPATH=src uv run python -m hrm_lm.training.train --config path/to/config.yaml --dataset synthetic --run_name custom-run
 ```
 The config must follow the structure found in `src/hrm_lm/configs/default.yaml`.
 

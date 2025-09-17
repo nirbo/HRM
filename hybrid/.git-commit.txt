@@ -1,11 +1,10 @@
-Trainer QoL: checkpoint rotation, auto-resume, run naming, best model tracking
+Make --dry_run a flag
 
 Summary
-- Added CLI flags for run naming, checkpoint rotation, and best-model persistence; checkpoints now auto-resume when rerun.
-- Implemented checkpoint FIFO limit, best-model directory maintenance, and automatic detector for completed runs.
-- Documented new workflow, including auto-resume semantics and extended CLI table.
+- Converted trainer `--dry_run` argument to a boolean flag (`action='store_true'`) and updated doc examples accordingly.
+- Re-ran dry-run command and pytest to verify usage remains correct.
 
 Files
-- src/hrm_lm/training/train.py — CLI updates, auto-resume, checkpoint limit enforcement, best-model saver.
-- TRAINING.md — refreshed instructions covering run names, rotation, and new parameters.
-- llm.state — updated task log (not intended for commit).
+- src/hrm_lm/training/train.py — CLI flag update.
+- TRAINING.md — refreshed dry-run examples to match flag usage.
+- llm.state — updated task log (not for commit).
