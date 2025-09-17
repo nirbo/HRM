@@ -1,19 +1,8 @@
-HRM × LM architecture, training tooling, and documentation overhaul
+Fix README Mermaid diagram label so GitHub renders architecture flowchart
 
 Summary
-- Documented complete hybrid stack in README with Mermaid diagram showing encoder, HRM, gating bridge, and decoder interactions.
-- Added dedicated TRAINING.md covering environment setup, dataset expectations, command examples, and full CLI parameter reference.
-- Implemented tokenizer/data utilities, inference helper, deep-supervision & halting-aware hybrid model updates, bridge gating, enhanced trainer CLI, and new unit/property tests.
-- Ensured configs expose deep supervision & halting knobs; decoder now uses sinusoidal positions; HRM core returns per-cycle projections.
-- Validated via dry-run and pytest (bridge/DSS/memory tests) after installing dependencies with uv.
+- Replace the CLS node label to avoid nested closing bracket that broke GitHub Mermaid parsing.
+- Diagram now renders correctly while retaining architecture context.
 
 Files
-- README.md — architecture narrative & diagram plus training reference pointer.
-- TRAINING.md — trainer usage, dataset formatting, CLI table, helpful commands.
-- src/hrm_lm/configs/default.yaml — added halting/deep supervision defaults.
-- src/hrm_lm/data/*.py — tokenizer & synthetic dataset with padding helper.
-- src/hrm_lm/inference/*.py — CLI-friendly greedy generation utility.
-- src/hrm_lm/models/{bridges,decoder,hrm_core,hybrid}.py — gating, positional encoding, deep supervision, halting regularizer.
-- src/hrm_lm/training/train.py — dataset loop, mixed precision, validation & checkpointing, CLI args.
-- tests/test_{forward,bridges,memory}.py — coverage for DS, bridge modes, memory savings.
-- llm.state — updated task log; not intended for commit.
+- README.md — adjust HRM diagram label (`CLS Pool`).

@@ -18,7 +18,7 @@ flowchart LR
     B --> C[Positional Encoding]
     C --> D[Transformer / Mamba2 Layers]
     D --> E[Contextual States]
-    D --> F[[CLS] Pool]
+    D --> F[[CLS Pool]]
   end
 
   F --> G[PromptToHRMBridge]
