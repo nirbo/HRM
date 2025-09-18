@@ -4,8 +4,10 @@ omegaconf>=2.3
 tokenizers>=0.15
 sentencepiece>=0.1.99
 numpy
-# Optional (Linux + CUDA): uncomment to try Mamba2. On macOS leave commented.
-# mamba-ssm>=2.2.2
 rich>=13
 pyarrow>=14
 pandas>=2.3
+# Optional (Linux + CUDA): uncomment to try Mamba2. On macOS leave commented.
+# mamba-ssm>=2.2.2
+# causal-conv1d
+

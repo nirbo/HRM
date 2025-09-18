@@ -5,9 +5,10 @@ import argparse
 import json
 import random
 from pathlib import Path
-from typing import Iterable, Iterator, Optional
+from typing import Iterator, Optional
 
 import pyarrow.parquet as pq
+from rich.progress import Progress, SpinnerColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn, TaskProgressColumn, TextColumn
 
 from hrm_lm.data.simple_tokenizer import SimpleTokenizer, BOS_ID, EOS_ID
 
@@ -48,36 +49,49 @@ def convert_dataset(source_dir: Path, dest_dir: Path, max_seq_len: int, val_rati
 
   with train_path.open('w', encoding='utf-8') as train_f, val_path.open('w', encoding='utf-8') as val_f:
     parquet_files = sorted(source_dir.glob('*.parquet'))
-    for parquet_path in parquet_files:
-      for text in iter_text(parquet_path):
-        tokenizer.fit([text])
-        tokens = tokenizer.encode(text, add_specials=False)
-        if not tokens:
-          continue
-        # chunk tokens
-        start = 0
-        while start < len(tokens):
-          chunk_tokens = tokens[start:start + max_tokens]
-          start += max_tokens
-          if not chunk_tokens:
-            break
-          seq = [tokenizer.bos_id] + chunk_tokens + [tokenizer.eos_id]
-          if len(seq) < 3:
+    progress = Progress(
+      SpinnerColumn(),
+      TextColumn('[progress.description]{task.description}'),
+      BarColumn(),
+      TaskProgressColumn(),
+      TimeElapsedColumn(),
+      TimeRemainingColumn(),
+      transient=True,
+    )
+    with progress:
+      files_task = progress.add_task('files', total=len(parquet_files))
+      samples_task = progress.add_task('samples', total=None)
+      for parquet_path in parquet_files:
+        for text in iter_text(parquet_path):
+          tokenizer.fit([text])
+          tokens = tokenizer.encode(text, add_specials=False)
+          if not tokens:
             continue
-          decoder_in = seq[:-1]
-          labels = seq[1:]
-          sample = {
-            'encoder_ids': decoder_in,
-            'decoder_input_ids': decoder_in,
-            'labels': labels,
-          }
-          target_f = train_f if random.random() > val_ratio else val_f
-          json.dump(sample, target_f)
-          target_f.write('\n')
-          if target_f is train_f:
-            train_count += 1
-          else:
-            val_count += 1
+          start = 0
+          while start < len(tokens):
+            chunk_tokens = tokens[start:start + max_tokens]
+            start += max_tokens
+            if not chunk_tokens:
+              break
+            seq = [tokenizer.bos_id] + chunk_tokens + [tokenizer.eos_id]
+            if len(seq) < 3:
+              continue
+            decoder_in = seq[:-1]
+            labels = seq[1:]
+            sample = {
+              'encoder_ids': decoder_in,
+              'decoder_input_ids': decoder_in,
+              'labels': labels,
+            }
+            target_f = train_f if random.random() > val_ratio else val_f
+            json.dump(sample, target_f)
+            target_f.write('\n')
+            if target_f is train_f:
+              train_count += 1
+            else:
+              val_count += 1
+            progress.update(samples_task, advance=1)
+        progress.update(files_task, advance=1)
 
   vocab_path = dest_dir / 'tokenizer.json'
   with vocab_path.open('w', encoding='utf-8') as f:
@@ -92,6 +106,7 @@ def convert_dataset(source_dir: Path, dest_dir: Path, max_seq_len: int, val_rati
   }
   with (dest_dir / 'meta.json').open('w', encoding='utf-8') as f:
     json.dump(meta, f, indent=2)
+  print(f'Wrote {train_count} train and {val_count} val samples to {dest_dir}')
 
 
 if __name__ == '__main__':

@@ -1,52 +1,10 @@
 # Task State
 
-## Original Task
-Have a look at the code in the cwd, then read through docs/HRM_LM_Integration_Design.md. Understand the design document without modifying it and determine whether it is sufficiently comprehensive to implement from.
+## Completed Actions
+- Added Rich-based progress visualization to `scripts/prepare_language_dataset.py`, showing file and sample counts while streaming parquet shards.
+- Script now prints a final summary of train/val sample counts and writes metadata as before.
+- Declared `pyarrow>=14` and `pandas>=2.3` in requirements so dataset conversion dependencies are explicit.
 
-## Plan
-1. Review repository contents within `hybrid` to understand available code and resources.
-2. Read `AGENTS.md` to ensure all operating constraints are understood and recorded.
-3. Study `docs/HRM_LM_Integration_Design.md` in detail, capturing key components and open questions.
-4. Evaluate whether the design document is comprehensive enough for implementation and prepare the response for the user.
-
-## Progress Tracker
-- Completed Steps: Step 1, Step 2, Step 3, Step 4
-- Current Step: None — awaiting user feedback
-- Pending Steps: None
-
-## Action Log
-- 2025-09-17T02:12:31Z | shell `ls` (workdir=.) -> listed top-level entries in `hybrid` directory.
-- 2025-09-17T02:12:31Z | shell `cat AGENTS.md` (workdir=.) -> retrieved primary agent instructions.
-- 2025-09-17T02:12:31Z | shell `sed -n '1,200p' AGENTS.md` (workdir=.) -> captured detailed P1 rules and statefile requirements.
-- 2025-09-17T02:12:31Z | shell `sed -n '200,400p' AGENTS.md` (workdir=.) -> confirmed no additional content beyond 200 lines.
-- 2025-09-17T02:12:31Z | shell `wc -l AGENTS.md` (workdir=.) -> verified line count (116 lines).
-- 2025-09-17T02:12:31Z | shell `tail -n +80 AGENTS.md` (workdir=.) -> read remaining agent-specific instructions and persistent context.
-- 2025-09-17T02:12:31Z | shell `sed -n '40,120p' AGENTS.md` (workdir=.) -> reviewed middle sections on statefile management and planning.
-- 2025-09-17T02:12:31Z | shell `ls llm.state` (workdir=.) -> confirmed statefile did not exist prior to initialization.
-- 2025-09-17T02:12:31Z | shell `date -u +"%Y-%m-%dT%H:%M:%SZ"` (workdir=.) -> obtained UTC timestamp for logging.
-- 2025-09-17T02:12:31Z | Initialized `llm.state` with task context, plan, and action history.
-- 2025-09-17T02:13:39Z | shell `sed -n '1,160p' docs/HRM_LM_Integration_Design.md` (workdir=.) -> read executive summary and initial tasks covering current repo state and first implementation steps.
-- 2025-09-17T02:13:39Z | shell `sed -n '160,320p' docs/HRM_LM_Integration_Design.md` (workdir=.) -> reviewed deep supervision, halting, and bridge expansion tasks.
-- 2025-09-17T02:13:39Z | shell `sed -n '320,480p' docs/HRM_LM_Integration_Design.md` (workdir=.) -> examined tokenizer/dataset integration and generation script plan.
-- 2025-09-17T02:13:39Z | shell `sed -n '480,640p' docs/HRM_LM_Integration_Design.md` (workdir=.) -> covered testing strategy, acceptance criteria, and risk register.
-- 2025-09-17T02:13:39Z | shell `sed -n '640,800p' docs/HRM_LM_Integration_Design.md` (workdir=.) -> read roadmap, command cheat sheet, and final self-check.
-- 2025-09-17T02:14:21Z | shell `ls src/hrm_lm/models` (workdir=.) -> verified existing model modules referenced by the design plan.
-- 2025-09-17T02:15:10Z | shell `sed -n '1,200p' src/hrm_lm/configs/default.yaml` (workdir=.) -> inspected current configuration defaults relevant to design document changes.
-- 2025-09-17T02:15:35Z | shell `sed -n '1,200p' src/hrm_lm/models/decoder.py` (workdir=.) -> confirmed decoder implementation aligns with planned positional encoding update.
-- 2025-09-17T02:16:29Z | shell `sed -n '1,200p' src/hrm_lm/models/hybrid.py` (workdir=.) -> reviewed existing HRMLanguageModel forward path for DS and gating changes.
-- 2025-09-17T02:17:10Z | shell `nl -ba docs/HRM_LM_Integration_Design.md | sed -n '240,360p'` (workdir=.) -> captured precise line numbers for tokenizer and dataset plan sections.
-- 2025-09-17T02:17:33Z | shell `nl -ba docs/HRM_LM_Integration_Design.md | sed -n '120,240p'` (workdir=.) -> recorded line numbers for tasks covering DS and bridge gating instructions.
-- 2025-09-17T02:18:03Z | shell `sed -n '1,200p' src/hrm_lm/models/hrm_core.py` (workdir=.) -> verified current HRMCore already returns auxiliary data for deep supervision.
-- 2025-09-17T02:18:40Z | shell `nl -ba docs/HRM_LM_Integration_Design.md | sed -n '360,460p'` (workdir=.) -> gathered line numbers for generation script and later tasks.
-- 2025-09-17T02:19:12Z | Synthesized assessment of design document completeness and captured open questions for user feedback.
-
-## Pending Steps
-None — awaiting next instructions.
-
-## Current Summary
-Document delivers a structured roadmap (architecture overview, staged diffs, testing, risks) that is broadly adequate for implementation. Identified two clarifications to close: expose BOS/EOS handles (or adjust usage) in the tokenizer/generation plan, and spell out the exact halting-loss wiring so implementers know where `halting_weight` and targets live.
-
-## Unresolved Issues
-- `SimpleTokenizer` snippet lacks an exposed `BOS`/`EOS` attribute while `generate()` expects `tokenizer.BOS`, which will currently fall back to a hard-coded `1` (lines noted in the report).
-- Halting regularizer is described conceptually but the patch location and target value remain unspecified, risking divergent implementations.
+## Verification
+- Not rerun on full dataset to avoid heavy I/O (logic-only change).
 

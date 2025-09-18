@@ -1,9 +1,9 @@
-Convert FineWeb derivative into HRM-LM token dataset
+Add progress bar to dataset converter
 
 Summary
-- Added `scripts/prepare_language_dataset.py` to stream parquet rows into token triplets with the simple tokenizer, producing `train/val` JSONL files plus vocab metadata.
-- Documented dataset preparation workflow in `TRAINING.md` and added required deps (`pyarrow`, `pandas`) to `requirements.txt`.
-- Introduced basic `.gitignore` entries for datasets and run artifacts.
+- Wrapped the parquet-to-token pipeline with a Rich progress bar that tracks files processed and samples emitted.
+- Printed a completion summary and listed `pyarrow`/`pandas` as explicit dependencies in `requirements.txt`.
 
-Outputs
-- Generated `datasets/anothy1-fineweb-edu-cleaned-simplified/processed/{train,val}.jsonl`, `tokenizer.json`, and `meta.json` (kept untracked).
+Files
+- scripts/prepare_language_dataset.py — progress visualization and summary print.
+- requirements.txt — added conversion dependencies (and noted optional causal-conv1d).
