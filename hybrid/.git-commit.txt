@@ -1,7 +1,7 @@
 Commit Summary:
-- resolve legacy checkpoints by scanning for step_*.pt files when model.pt is absent
-- reuse helper across step/final resume paths to load historical runs
-- record change in llm.state after compileall verification
+- add --reset_progress flag so checkpoints can seed new runs without reusing optimizer state
+- refactor resume logic to detect legacy step_*.pt files and optionally reset start step/best loss
+- document reset workflow in TRAINING.md and log changes in llm.state
 
 Testing / Validation:
 - PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py

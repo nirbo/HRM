@@ -95,6 +95,7 @@ The config must follow the structure found in `src/hrm_lm/configs/default.yaml`.
 ## Auto-Resume Behavior
 
 Whenever a checkpoint directory already contains saved models, the trainer loads the latest checkpoint (by step number) before continuing. If the stored step count is greater than or equal to the requested `--steps`, the run exits immediately to avoid duplicate work.
+Pass `--reset_progress` to load only the weights from that checkpoint while restarting optimizer state, warmup, and step counters from zero.
 
 ## Dataset Format Expectations
 
@@ -136,6 +137,7 @@ To add a custom dataset:
 | `--dataset_workers` | `0` | Number of worker processes for JSONL loading (`0`/`1` = single-process). |
 | `--mixed_precision` | `none` | Precision mode: `none`, `bf16`, or `fp16` (fp16 requires CUDA). |
 | `--grad_clip` | `0.0` | L2 gradient clipping norm (disabled when ≤0). |
+| `--reset_progress` | *flag* | Load checkpoint weights but restart from step 0 (ignores optimizer/scaler state). |
 
 Additional notes:
 - Checkpoint payloads include optimizer state, GradScaler state (when fp16), and the best validation loss so auto-resume reproduces optimizer momentum.

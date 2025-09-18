@@ -404,6 +404,7 @@ def main():
   parser.add_argument('--max_seq_len', type=int, default=None)
   parser.add_argument('--log_steps', type=int, default=10)
   parser.add_argument('--dataset_workers', type=int, default=0, help='Number of worker processes for JSONL loading (0 = single process).')  # Allow callers to opt into multiprocessing during dataset ingest.
+  parser.add_argument('--reset_progress', action='store_true', help='Load weights from the latest checkpoint but restart optimizer state and step counter.')  # Enable fresh runs seeded from existing checkpoints.
   args = parser.parse_args()
 
   cfg = OmegaConf.load(args.config) if args.config else OmegaConf.load(Path(__file__).parent.parent / 'configs' / 'default.yaml')
@@ -530,16 +531,21 @@ def main():
     if resume is not None:
       resume_step, resume_path, data = resume
       model.load_state_dict(data['state_dict'])
-      if 'optimizer' in data:
-        optimizer.load_state_dict(data['optimizer'])
-      if scaler is not None and scaler.is_enabled() and data.get('scaler') is not None:
-        scaler.load_state_dict(data['scaler'])
-      best_loss = float(data.get('best_loss', float('inf')))
-      start_step = int(data.get('step', resume_step))
-      console.print(f'[bold yellow]Resuming from {resume_path} (step {start_step})[/bold yellow]')
-      if start_step >= total_steps:
-        console.print(f'[bold green]All {total_steps} steps already completed; exiting.[/bold green]')
-        return
+      if args.reset_progress:
+        console.print(f'[bold cyan]Loaded weights from {resume_path}; resetting optimizer state and step counter.[/bold cyan]')
+        start_step = 0
+        best_loss = float('inf')
+      else:
+        if 'optimizer' in data:
+          optimizer.load_state_dict(data['optimizer'])
+        if scaler is not None and scaler.is_enabled() and data.get('scaler') is not None:
+          scaler.load_state_dict(data['scaler'])
+        best_loss = float(data.get('best_loss', float('inf')))
+        start_step = int(data.get('step', resume_step))
+        console.print(f'[bold yellow]Resuming from {resume_path} (step {start_step})[/bold yellow]')
+        if start_step >= total_steps:
+          console.print(f'[bold green]All {total_steps} steps already completed; exiting.[/bold green]')
+          return
     else:
       console.print('[bold cyan]No checkpoint found; starting fresh.[/bold cyan]')
 
