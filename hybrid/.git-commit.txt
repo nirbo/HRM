@@ -1,19 +1,15 @@
-Title: Copy tokenizer artifacts with checkpoints
+Title: Record tokenizer push in state log
 
 Summary:
-- Surface tokenizer metadata from dataset loader and copy `tokenizer.json`/`meta.json` beside every saved checkpoint (step, best, final).
-- Ensure run directories receive these artifacts immediately and document the new behavior in TRAINING.md.
-- Note the update in llm.state for traceability.
+- Append llm.state with the push event for the tokenizer artifact commit.
 
 Files Touched:
-- src/hrm_lm/training/train.py
-- TRAINING.md
 - llm.state
 - .git-commit.txt
 - llm.state.bak (local backup, untracked)
 
 Validation:
-- python -m compileall src/hrm_lm/training/train.py
+- Not applicable (metadata update only).
 
 Follow-ups:
-- Integrate tokenizer awareness into inference CLI (tracked separately).
+- None.
