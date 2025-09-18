@@ -1,19 +1,15 @@
-Title: Auto-load config/tokenizer in generator
+Title: Log generator push in statefile
 
 Summary:
-- Resolve device with GPU preference and ingest configs from checkpoints when available.
-- Load tokenizer.json/meta.json artifacts beside checkpoints to generate human-readable text.
-- Maintain fallbacks for synthetic/simple tokenizers and document actions in llm.state.
+- Append llm.state with entries documenting the generator commit and push events.
 
 Files Touched:
-- src/hrm_lm/inference/generate.py
 - llm.state
 - .git-commit.txt
 - llm.state.bak (local backup, untracked)
 
 Validation:
-- python -m compileall src/hrm_lm/inference/generate.py
-- PYTHONPATH=src ./venv/bin/python -m hrm_lm.inference.generate --checkpoint runs/test-1/best-model/best.pt --prompt "what is the capital of France?" --device cuda
+- Not applicable.
 
 Follow-ups:
 - None.

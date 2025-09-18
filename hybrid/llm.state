@@ -16,6 +16,9 @@
 5. Validate changes conceptually and note any pending verification tasks.
 
 ### Action Log
+- 2025-09-18T05:23Z: Pushed generator update to origin/hybrid.
+- 2025-09-18T05:23Z: Committed generator auto-loading update (`git commit -m "Improve generator checkpoint loading"`).
+- 2025-09-18T05:23Z: Staged generator updates, statefile, and commit summary for auto-loading feature.
 - 2025-09-18T05:23Z: Smoke-tested generator with new artifacts via `PYTHONPATH=src ./venv/bin/python -m hrm_lm.inference.generate ...`.
 - 2025-09-18T05:23Z: Ran `python -m compileall src/hrm_lm/inference/generate.py` to validate generator changes.
 - 2025-09-18T05:23Z: Normalized dataset hint handling in generator for auto artifacts.
