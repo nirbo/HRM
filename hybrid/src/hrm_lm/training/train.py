@@ -618,9 +618,17 @@ def main():
     speed = format_speed(time_per_step)
 
     if global_step % log_steps == 0 or global_step == total_steps:
+      try:
+        loss_val = loss.item()
+      except RuntimeError as exc:
+        if 'device-side assert' in str(exc) or 'launch timed out' in str(exc):
+          torch.cuda.synchronize()
+          loss_val = float('nan')
+        else:
+          raise
       parts = [
         f'[grey70]step {global_step}/{total_steps}[/grey70]',
-        f'[chartreuse4]loss {loss.item():.15f}[/chartreuse4]',
+        f'[chartreuse4]loss {loss_val:.15f}[/chartreuse4]',
         f'[steel_blue]grad {grad_norm:.15f}[/steel_blue]',
         f'[dark_orange3]lr {current_lr:.15f}[/dark_orange3]',
         f'[orchid]eta {eta}[/orchid]',

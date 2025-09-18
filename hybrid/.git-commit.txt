@@ -1,6 +1,6 @@
 Commit Summary:
-- free evaluation tensors and clear CUDA cache/ipc after validation to avoid post-eval OOM
-- document change in llm.state per AGENTS.md
+- protect training log against CUDA launch timeouts by guarding loss.item() and synchronizing on failure
+- document change in llm.state per instructions
 
 Testing / Validation:
 - PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py

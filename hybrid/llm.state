@@ -308,6 +308,7 @@
 3. Document plan in statefile and share execution steps with user.
 
 ### Action Log
+- 2025-09-18T19:20Z: Guarded loss.item() with timeout handling; compileall succeeded.
 - 2025-09-18T19:08Z: Added GPU cache cleanup after validation to mitigate post-eval OOM.
 - 2025-09-18T19:04Z: Added --reset_progress flag and conditional resume logic; compileall passed.
 - 2025-09-18T19:02Z: Planning reset-progress flag to reuse checkpoints without resuming optimizer state.
