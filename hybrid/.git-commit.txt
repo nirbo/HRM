@@ -1,7 +1,5 @@
 Commit Summary:
-- add streamed JSONL loader with offset indexing to avoid OOM on multi-million sample corpora
-- integrate heartbeat-based indexing and on-demand batching; clamp dataset_workers to CPU count
-- document streaming behavior and worker semantics in TRAINING.md; log changes in llm.state
+- append streaming loader commit record to llm.state per logging protocol
 
 Testing / Validation:
-- PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py
+- not required (statefile update)

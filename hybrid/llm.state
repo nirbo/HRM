@@ -308,6 +308,7 @@
 3. Document plan in statefile and share execution steps with user.
 
 ### Action Log
+- 2025-09-18T18:50Z: Committed streaming dataset loader updates and pushed to origin/hybrid.
 - 2025-09-18T18:45Z: Observed OOM kill during 30-worker load; identified in-memory caching as root cause given 5.6M samples.
 - 2025-09-18T18:46Z: Added offset indexing with streaming JSONL iterator to avoid materializing entire dataset.
 - 2025-09-18T18:47Z: Implemented adaptive caching threshold and heartbeat-aware index builder; compileall verification passed.
