@@ -4,3 +4,63 @@
 - Trainer logging now prints loss/grad/lr with 15 decimal places and formats ETA as `NNh:NNm`.
 - Dataset converter already supports multi-threaded batching (per previous update).
 
+## Session 2025-09-18T02:06Z
+### Original Task Description
+- Investigate why learning rate stays constant after 500-step warmup and switch default scheduler to cosine with CLI selection option.
+
+### Plan
+1. Inspect current training scheduler implementation to confirm warmup and decay behavior.
+2. Identify configuration entry points for default scheduler and CLI arguments.
+3. Modify code to default to cosine scheduler post-warmup while supporting user-selected schedulers via CLI.
+4. Review code comments, documentation, and tests to ensure consistency.
+5. Validate changes conceptually and note any pending verification tasks.
+
+### Action Log
+- 2025-09-18T02:06Z: Listed repo root contents via `ls`.
+- 2025-09-18T02:06Z: Read existing `llm.state` content via `cat llm.state`.
+- 2025-09-18T02:06Z: Queried current UTC time via `date -u` (multiple invocations for timestamp capture).
+- 2025-09-18T02:06Z: Updated placeholder timestamps in `llm.state` via inline Python script.
+- 2025-09-18T02:06Z: Inserted additional action log entries via inline Python script.
+- 2025-09-18T02:07Z: Searched for scheduler references via `rg "scheduler" -n src` (no direct matches).
+- 2025-09-18T02:07Z: Listed learning-rate related code via `rg "lr" src`.
+- 2025-09-18T02:07Z: Reviewed training script header and core sections via `sed` to inspect `adjust_lr`.
+- 2025-09-18T02:07Z: Updated plan tracking sections in `llm.state` via inline Python script.
+- 2025-09-18T02:09Z: Synchronized task plan via plan tool update.
+- 2025-09-18T02:11Z: Backed up session state to `llm.state.bak`.
+- 2025-09-18T02:11Z: Added CLI scheduler argument in `src/hrm_lm/training/train.py` via inline Python edit.
+- 2025-09-18T02:11Z: Replaced `adjust_lr` logic in `src/hrm_lm/training/train.py` to support cosine/linear/constant schedulers.
+- 2025-09-18T02:12Z: Updated plan status to reflect scheduler implementation completion.
+- 2025-09-18T02:13Z: Located LR references in docs via `rg "lr scheduler" -n`.
+- 2025-09-18T02:13Z: Inspected training guide warmup sections via `rg "warmup" TRAINING.md`.
+- 2025-09-18T02:13Z: Reviewed documentation snippet via `sed -n` for editing context.
+- 2025-09-18T02:13Z: Updated `TRAINING.md` to describe scheduler selection using inline Python script.
+- 2025-09-18T02:13Z: Recorded plan completion status for documentation review.
+- 2025-09-18T02:14Z: Attempted timestamp capture via `date -u +"%Y-%m-%dT%H:%MMZ"` (corrected format afterward).
+- 2025-09-18T02:14Z: Verified syntax by running `python -m compileall src/hrm_lm/training/train.py`.
+- 2025-09-18T02:14Z: Simulated scheduler outputs via inline Python script to confirm decay behavior.
+- 2025-09-18T02:14Z: Finalized plan via plan tool after validations.
+- 2025-09-18T02:15Z: Appended task completion summary to `llm.state`.
+- 2025-09-18T02:16Z: Authored commit summary in `.git-commit.txt`.
+- 2025-09-18T02:16Z: Staged modified files and `.git-commit.txt` for commit.
+- 2025-09-18T02:16Z: Restaged `llm.state` after logging staging action.
+
+### Pending Steps
+- None; plan complete.
+
+### Current Summary
+- All plan steps complete; scheduler options implemented, documented, and sanity-checked.
+
+### Open Issues
+- Consider future runtime validation on real training runs (out of scope for this session).
+
+### Task Completion Summary
+- Added CLI `--lr_scheduler` with default cosine decay and corresponding logic in `src/hrm_lm/training/train.py`.
+- Updated `TRAINING.md` to describe scheduler options and adjusted warmup guidance.
+- Validated syntax and scheduler behavior via compile and simulation; recommend running a short training job to observe LR logs end-to-end.
+
+
+### Post-Completion Notes
+- 2025-09-18T02:16Z: Reviewed user-provided training metrics confirming cosine decay near warmup boundary.
+- 2025-09-18T02:16Z: Committed staged changes (`git commit -m "Add configurable LR scheduler and docs updates"`).
+- 2025-09-18T02:16Z: Prepared to amend commit after logging post-commit actions.
+- 2025-09-18T02:16Z: Amended commit to include latest statefile logs.

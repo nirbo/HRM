@@ -1,8 +1,20 @@
-Refine trainer log formatting
+Title: Add configurable cosine LR scheduler with documentation updates
 
-Summary
-- Increased loss/grad/lr precision to 15 decimal places for easier monitoring.
-- Updated ETA rendering to `NNh:NNm` to emphasize hours/minutes.
+Summary:
+- Default the trainer to a cosine learning-rate decay after warmup while preserving linear and constant options.
+- Expose the decay selection via a new `--lr_scheduler` CLI flag and refactor `adjust_lr` to handle warmup plus decay phases.
+- Refresh training documentation to describe the scheduler flag and clarify how warmup interacts with decay choices.
+- Update llm.state to capture the worklog, backups, and validation steps executed during the change.
 
-Files
+Files Touched:
 - src/hrm_lm/training/train.py
+- TRAINING.md
+- llm.state
+- llm.state.bak (local backup, not committed)
+
+Validation:
+- python -m compileall src/hrm_lm/training/train.py
+- Manual scheduler simulation script (inline Python) confirming cosine/linear/constant trajectories
+
+Follow-ups:
+- Optionally run a short training session to observe LR decay over thousands of steps for runtime confirmation.

@@ -219,6 +219,7 @@ def main():
   parser.add_argument('--optimizer', default='adamw', choices=['adamw', 'adamw_8bit'])
   parser.add_argument('--learning_rate', type=float, default=None)
   parser.add_argument('--warmup_steps', type=int, default=0)
+  parser.add_argument('--lr_scheduler', default='cosine', choices=['cosine', 'linear', 'constant'])  # selects LR decay scheme
   parser.add_argument('--steps', type=int, default=0)
   parser.add_argument('--epochs', type=int, default=0)
   parser.add_argument('--val_every', type=int, default=0)
@@ -349,13 +350,24 @@ def main():
   run_start_time = time.time()
 
   def adjust_lr(global_step: int) -> float:
-    if warmup_steps == 0:
-      lr = base_lr
+    if warmup_steps > 0 and global_step <= warmup_steps:  # apply warmup ramp if configured
+      warmup_ratio = min(global_step / warmup_steps, 1.0)  # clamp warmup progress between 0 and 1
+      lr = base_lr * warmup_ratio  # scale base LR during warmup
     else:
-      warmup_ratio = min(global_step / warmup_steps, 1.0)
-      lr = base_lr * warmup_ratio
-    set_learning_rate(optimizer, lr)
-    return lr
+      decay_steps = max(total_steps - warmup_steps, 1)  # ensure at least one decay step
+      decay_progress_raw = (global_step - warmup_steps) / decay_steps  # compute raw decay progress
+      decay_progress = min(max(decay_progress_raw, 0.0), 1.0)  # clamp decay progress between 0 and 1
+      if args.lr_scheduler == 'cosine':  # select cosine decay multiplier
+        decay_factor = 0.5 * (1.0 + math.cos(math.pi * decay_progress))  # compute cosine multiplier
+      elif args.lr_scheduler == 'linear':  # select linear decay multiplier
+        decay_factor = 1.0 - decay_progress  # compute linear multiplier
+      elif args.lr_scheduler == 'constant':  # keep learning rate constant after warmup
+        decay_factor = 1.0  # no decay applied
+      else:  # safeguard against unexpected scheduler names
+        raise ValueError(f"Unsupported lr scheduler '{args.lr_scheduler}'")  # raise explicit configuration error
+      lr = base_lr * decay_factor  # scale base LR by selected decay factor
+    set_learning_rate(optimizer, lr)  # push updated LR into optimizer parameter groups
+    return lr  # expose the learning rate for logging
 
   def truncate_to_max_length(tensor: torch.Tensor, length: int) -> torch.Tensor:
     return tensor[:, :length] if tensor.size(1) > length else tensor
