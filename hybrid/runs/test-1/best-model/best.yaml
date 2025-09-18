@@ -1,0 +1,41 @@
+bridge:
+  prefix_len: 8
+  type: prefix
+model:
+  d_model: 512
+  decoder:
+    max_seq_len: 1024
+    n_layers: 8
+  dropout: 0.0
+  encoder:
+    backend: transformer
+    max_seq_len: 2048
+    n_layers: 8
+  hrm:
+    approx_grad: one_step
+    d_model: 512
+    deep_supervision: false
+    ds_weight: 0.2
+    h_cycles: 4
+    h_layers: 2
+    h_len: 8
+    halting_weight: 0.01
+    l_layers: 2
+    l_len: 64
+    l_steps: 8
+    out_dim: 512
+    use_halting: false
+  n_heads: 8
+  vocab_size: 131072
+optim:
+  betas:
+  - 0.9
+  - 0.95
+  lr: 0.00025
+  weight_decay: 0.0
+train:
+  batch_size: 32
+  mixed_precision: bf16
+  seed: 1337
+  seq_len: 256
+  tgt_len: 256

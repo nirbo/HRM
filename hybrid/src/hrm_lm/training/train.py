@@ -160,6 +160,14 @@ def enforce_checkpoint_limit(directory: Path, limit: int) -> None:
       pass
 
 
+def persist_checkpoint_config(directory: Path, stem: str, cfg_serializable) -> None:
+  cfg_path = directory / f'{stem}.yaml'  # derive config file path alongside checkpoint
+  try:  # attempt to persist config without interrupting training
+    cfg_node = OmegaConf.create(cfg_serializable)  # rebuild OmegaConf node for serialization
+    OmegaConf.save(cfg_node, cfg_path)  # write config snapshot to disk
+  except Exception as exc:  # capture serialization issues
+    console.print(f'[bold red]Failed to write config {cfg_path}: {exc}[/bold red]')  # surface failure without aborting training
+
 def build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, step: int, best_loss: float, val_loss: Optional[float], optimizer_name: str) -> dict:
   payload = {
     'state_dict': model.state_dict(),
@@ -451,16 +459,19 @@ def main():
         if best_dir is not None:
           best_payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, global_step, best_loss, v_loss, args.optimizer)
           torch.save(best_payload, best_dir / 'best.pt')
+          persist_checkpoint_config(best_dir, 'best', cfg_serializable)  # persist matching config snapshot for best checkpoint
 
       if save_dir is not None:
         payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, global_step, best_loss, v_loss, args.optimizer)
         ckpt_path = save_dir / f'step_{global_step}.pt'
         torch.save(payload, ckpt_path)
+        persist_checkpoint_config(save_dir, f'step_{global_step}', cfg_serializable)  # persist config alongside step checkpoint
         enforce_checkpoint_limit(save_dir, args.checkpoint_limit)
 
   if save_dir is not None:
     final_payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, total_steps, best_loss, None, args.optimizer)
     torch.save(final_payload, save_dir / 'final.pt')
+    persist_checkpoint_config(save_dir, 'final', cfg_serializable)  # persist config for final snapshot
 
 if __name__ == '__main__':
   main()

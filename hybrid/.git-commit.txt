@@ -1,16 +1,20 @@
-Title: Log eval batch push in statefile
+Title: Persist configs alongside checkpoints and backfill best snapshot
 
 Summary:
-- Append llm.state with a record of the `git push` operation for the eval batch size update.
-- No code or documentation behavior changes.
+- Add a helper in the trainer to emit YAML configs beside every saved checkpoint (step, best, and final) without interrupting training.
+- Document the new artifacts so runs automatically carry reproducible configs.
+- Extract the existing best checkpoint's config into runs/test-1/best-model/best.yaml for retroactive coverage.
 
 Files Touched:
+- src/hrm_lm/training/train.py
+- TRAINING.md
 - llm.state
 - .git-commit.txt
+- runs/test-1/best-model/best.yaml (new)
 - llm.state.bak (local backup, untracked)
 
 Validation:
-- Not applicable (metadata-only).
+- python -m compileall src/hrm_lm/training/train.py
 
 Follow-ups:
-- None.
+- None; generation CLI update still planned separately.

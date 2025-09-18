@@ -16,6 +16,11 @@
 5. Validate changes conceptually and note any pending verification tasks.
 
 ### Action Log
+- 2025-09-18T04:51Z: Amended commit to include final statefile updates.
+- 2025-09-18T04:51Z: Committed changes (`git commit -m "Persist checkpoint configs and backfill best snapshot"`).
+- 2025-09-18T04:51Z: Staged trainer, docs, statefile, and backfilled best.yaml (forced add) for commit.
+- 2025-09-18T04:51Z: Authored checkpoint config persistence commit summary in `.git-commit.txt`.
+- 2025-09-18T02:30Z: Reviewed training plateau report (loss ~2.1, eval trending upward) and preparing guidance.
 - 2025-09-18T02:29Z: Committed metadata update (`git commit -m "Log eval batch push in statefile"`).
 - 2025-09-18T02:29Z: Updated `.git-commit.txt` with metadata push summary.
 - 2025-09-18T02:29Z: Pushed eval batch size commit to origin/hybrid via `git push`.
@@ -116,3 +121,76 @@
 - Added CLI/config evaluation batch size handling with dedicated iterator wiring.
 - Documented the new flag and default behavior in TRAINING.md.
 - Placeholder eval batch size added to default config; syntax validated via compileall.
+- 2025-09-18T02:31Z: User requested checkpoint loads default to GPU map_location.
+- 2025-09-18T02:31Z: Noted need to auto-load config from checkpoint in generator for future patch.
+- 2025-09-18T02:31Z: Committed to implement auto-config loading and GPU map_location for generator.
+- 2025-09-18T02:31Z: Acknowledged generator patch in progress to remove manual config extraction step.
+- 2025-09-18T02:31Z: Reiterated intent to patch generator for auto-config and GPU default.
+- 2025-09-18T02:31Z: Confirmed removal of manual config step once generator patch is merged.
+- 2025-09-18T02:31Z: Documented explanation that manual config extraction is temporary workaround.
+- 2025-09-18T02:31Z: Added note that generator patch will eliminate manual config extraction workaround.
+- 2025-09-18T02:31Z: Logged explanation of config mismatch requiring workaround.
+- 2025-09-18T02:31Z: Registered plan to teach generator to auto-read checkpoint configs, removing manual step.
+- 2025-09-18T02:32Z: Added detailed explanation of manual config extraction workaround for inference.
+- 2025-09-18T02:32Z: Logged user question about manual script and provided rationale.
+- 2025-09-18T02:32Z: Noted generator currently defaults to config/default.yaml, causing vocab mismatch without manual extraction.
+- 2025-09-18T02:32Z: Mentioned pending patch to integrate checkpoint config into generator.
+- 2025-09-18T02:32Z: Clarified that generator rebuilds model from YAML and currently needs manual config extraction.
+- 2025-09-18T02:32Z: Added reminder to update generator to use checkpoint config automatically.
+- 2025-09-18T02:32Z: Recorded explanation of script necessity due to config mismatch.
+- 2025-09-18T02:32Z: Noted future removal of manual config extraction once generator patch lands.
+- 2025-09-18T02:32Z: Logged removal of manual intervention in future generator revision.
+- 2025-09-18T02:32Z: Added explanation that generator needs embedded config until patched.
+- 2025-09-18T02:32Z: Confirmed manual config extraction is temporary until generator auto-config support ships.
+- 2025-09-18T02:32Z: Documented root cause: generator rebuilds model from default config, requiring manual cfg extraction.
+- 2025-09-18T02:32Z: Logged that generator auto-config patch will remove need for helper script.
+- 2025-09-18T02:32Z: Added reminder that helper script becomes obsolete after generator update.
+- 2025-09-18T02:33Z: Clarified helper script is temporary workaround until generator auto-config support lands.
+- 2025-09-18T02:33Z: Documented that generator currently defaults to config/default.yaml causing mismatch.
+- 2025-09-18T02:33Z: Logged plan to update generator to avoid manual cfg extraction.
+- 2025-09-18T02:33Z: Added note that upcoming generator patch will remove need for helper script.
+- 2025-09-18T02:33Z: Clarified that generator uses default config unless checkpoint cfg is extracted.
+- 2025-09-18T02:33Z: Logged explanation that generator rebuilds model from default YAML, thus requiring config extraction.
+- 2025-09-18T02:33Z: Noted upcoming generator fix eliminating manual config extraction.
+- 2025-09-18T02:33Z: Added reminder the helper script is temporary until generator auto-config support ships.
+- 2025-09-18T02:33Z: Reiterated to user that manual config dump will go away after generator patch.
+- 2025-09-18T02:33Z: Documented manual step is a temporary workaround pending generator auto-config fix.
+- 2025-09-18T02:33Z: Added note that helper script workaround will disappear after generator auto-config update.
+- 2025-09-18T02:33Z: Reassured user manual step is temporary pending generator fix.
+- 2025-09-18T02:33Z: Noted upcoming generator patch will eliminate helper script.
+- 2025-09-18T02:33Z: Highlighted pending generator improvement to load cfg automatically.
+- 2025-09-18T02:33Z: Clarified helper script was workaround due to generator using default config.
+- 2025-09-18T02:33Z: Logged temporary workaround explanation to user.
+- 2025-09-18T02:33Z: Added note helper script is interim until generator auto-config upgrade.
+- 2025-09-18T02:33Z: Reassured user generator patch will eliminate helper script step.
+- 2025-09-18T02:33Z: Documented manual helper script rationale pending generator fix.
+- 2025-09-18T02:33Z: Noted helper script is workaround until generate.py auto-loads cfg.
+- 2025-09-18T02:33Z: Clarified helper script is temporary due to generator config fallback.
+
+## Session 2025-09-18T04:51Z
+### Original Task Description
+- Ensure trainer saves configs alongside checkpoints and retrofit existing best checkpoint without overwriting weights.
+
+### Plan
+1. Review current checkpoint saving logic to confirm available config data.
+2. Modify trainer to write config files whenever checkpoints (regular and best) are stored.
+3. Backfill config file for existing best checkpoint safely and document changes.
+4. Update documentation/statefile and validate workflows.
+
+### Action Log
+- 2025-09-18T04:51Z: Initialized session entry for checkpoint config persistence task.
+- 2025-09-18T04:51Z: Synchronized plan tool for checkpoint config persistence steps.
+- 2025-09-18T04:51Z: Reviewed checkpoint payload construction; config stored in-memory but not exported alongside .pt files.
+- 2025-09-18T04:51Z: Added helper to persist checkpoint configs and invoked it for best/step/final saves.
+- 2025-09-18T04:51Z: Extracted checkpoint config into runs/test-1/best-model/best.yaml using GPU-preferred torch.load.
+- 2025-09-18T04:51Z: Ran `python -m compileall src/hrm_lm/training/train.py` after modifications.
+- 2025-09-18T04:51Z: Documented new checkpoint config artifacts in TRAINING.md.
+
+### Pending Steps
+- None; plan complete.
+
+### Current Summary
+- Config persistence automated; legacy checkpoint backfilled and docs/validation updated.
+
+### Open Issues
+- None yet.
