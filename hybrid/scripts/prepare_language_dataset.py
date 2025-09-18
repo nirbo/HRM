@@ -5,6 +5,7 @@ import argparse
 import json
 import random
 import os
+import gzip
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -35,7 +36,7 @@ def clean_text(text: Optional[str]) -> Optional[str]:
   return normalized if normalized else None
 
 
-def iter_text(path: Path) -> Iterator[str]:
+def iter_parquet_text(path: Path) -> Iterator[str]:
   pf = pq.ParquetFile(path)
   for batch in pf.iter_batches(batch_size=512, columns=['revised_text', 'text', 'language']):
     cols = batch.to_pydict()
@@ -50,6 +51,52 @@ def iter_text(path: Path) -> Iterator[str]:
         yield text
 
 
+
+def iter_jsonl_text(path: Path) -> Iterator[str]:
+  opener = gzip.open if path.suffix == '.gz' else open
+  with opener(path, 'rt', encoding='utf-8') as handle:  # type: ignore[arg-type]
+    for line in handle:
+      line = line.strip()
+      if not line:
+        continue
+      record = json.loads(line)
+      text = build_sample_text(record)
+      if text:
+        yield text
+
+def iter_json_text(path: Path) -> Iterator[str]:
+  data = json.loads(path.read_text(encoding='utf-8'))
+  if isinstance(data, list):
+    for record in data:
+      text = build_sample_text(record)
+      if text:
+        yield text
+  else:
+    text = build_sample_text(data)
+    if text:
+      yield text
+
+def build_sample_text(record: dict) -> Optional[str]:
+  prompt = record.get('prompt')
+  response = record.get('response')
+  parts = []
+  if isinstance(prompt, str) and prompt.strip():
+    parts.append(prompt.strip())
+  if isinstance(response, str) and response.strip():
+    parts.append(response.strip())
+  return '\n'.join(parts) if parts else None
+
+def iter_source_text(path: Path) -> Iterator[str]:
+  suffix = path.suffix.lower()
+  if suffix == '.parquet':
+    yield from iter_parquet_text(path)
+  elif suffix in {'.jsonl', '.jsonl.gz'}:
+    yield from iter_jsonl_text(path)
+  elif suffix == '.json':
+    yield from iter_json_text(path)
+  else:
+    raise ValueError(f'Unsupported file format: {path}')
+
 # ---------------------------------------------------------------------------
 # Conversion Logic
 # ---------------------------------------------------------------------------
@@ -59,11 +106,14 @@ def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, voca
   random.seed(seed)
   dest_dir.mkdir(parents=True, exist_ok=True)
 
-  parquet_files = sorted(source_dir.glob('*.parquet'))
+  patterns = ['*.parquet', '*.jsonl', '*.json', '*.jsonl.gz']
+  source_files = []
+  for pattern in patterns:
+    source_files.extend(sorted(source_dir.glob(pattern)))
   if max_files is not None:
-    parquet_files = parquet_files[:max_files]
-  if not parquet_files:
-    raise ValueError(f'No parquet files found in {source_dir}')
+    source_files = source_files[:max_files]
+  if not source_files:
+    raise ValueError(f'No supported data files found in {source_dir}')
 
   if tokenizer_threads > 0:
     os.environ['RAYON_NUM_THREADS'] = str(tokenizer_threads)
@@ -79,8 +129,8 @@ def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, voca
     trainer = BpeTrainer(vocab_size=vocab_size, special_tokens=['<pad>', '<bos>', '<eos>', '<unk>'])
 
     def text_iterator():
-      for file_path in parquet_files:
-        yield from iter_text(file_path)
+      for file_path in source_files:
+        yield from iter_source_text(file_path)
 
     tokenizer.train_from_iterator(text_iterator(), trainer=trainer)
     tokenizer.save(str(tokenizer_path))
@@ -112,10 +162,10 @@ def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, voca
 
   with train_path.open('w', encoding='utf-8') as train_f, val_path.open('w', encoding='utf-8') as val_f:
     with progress:
-      files_task = progress.add_task('files', total=len(parquet_files))
+      files_task = progress.add_task('files', total=len(source_files))
       samples_task = progress.add_task('samples', total=None)
 
-      for parquet_path in parquet_files:
+      for source_path in source_files:
         buffer = []
         def flush_buffer():
           nonlocal buffer, train_count, val_count
@@ -152,7 +202,7 @@ def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, voca
           progress.update(samples_task, advance=emitted)
           buffer = []
 
-        for text in iter_text(parquet_path):
+        for text in iter_source_text(source_path):
           buffer.append(text)
           if len(buffer) >= tokenizer_batch:
             flush_buffer()
@@ -165,7 +215,7 @@ def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, voca
     'train_samples': train_count,
     'val_samples': val_count,
     'vocab_size': tokenizer.get_vocab_size(),
-    'source_files': len(parquet_files),
+    'source_files': len(source_files),
     'tokenizer_file': str(tokenizer_path.resolve()),
     'pad_id': pad_id,
     'bos_id': bos_id,
@@ -181,7 +231,7 @@ def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, voca
 # ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser(description='Convert parquet dataset to HRM-LM jsonl format.')
+  parser = argparse.ArgumentParser(description='Convert text/QA datasets (parquet/json/jsonl) into HRM-LM token triples.')
   parser.add_argument('--source', type=Path, default=Path('datasets/anothy1-fineweb-edu-cleaned-simplified'))
   parser.add_argument('--dest', type=Path, default=Path('datasets/anothy1-fineweb-edu-cleaned-simplified/processed'))
   parser.add_argument('--tokenizer', type=Path, default=None, help='Path to existing tokenizer.json; if missing, a new one is trained here.')

@@ -16,6 +16,8 @@
 5. Validate changes conceptually and note any pending verification tasks.
 
 ### Action Log
+- 2025-09-18T06:05Z: Extended prepare_language_dataset.py to handle json/jsonl alongside parquet and recompiled.
+- 2025-09-18T05:58Z: Staged threading update commit summary.
 - 2025-09-18T05:58Z: Appended state log noting compile validation and added threading support.
 - 2025-09-18T05:58Z: Captured diff for --num-threads option in normalization script.
 - 2025-09-18T05:58Z: Added --num-threads option to normalization script and recompiled.
