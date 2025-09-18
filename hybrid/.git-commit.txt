@@ -1,5 +1,7 @@
 Commit Summary:
-- append streaming loader commit record to llm.state per logging protocol
+- resolve legacy checkpoints by scanning for step_*.pt files when model.pt is absent
+- reuse helper across step/final resume paths to load historical runs
+- record change in llm.state after compileall verification
 
 Testing / Validation:
-- not required (statefile update)
+- PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py

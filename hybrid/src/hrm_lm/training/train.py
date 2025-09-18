@@ -248,6 +248,18 @@ class JSONLSplit:
 STEP_DIR_PATTERN = re.compile(r'^step_(\d+)$')
 
 
+def resolve_checkpoint_model_path(directory: Path) -> Optional[Path]:
+  """Locate the model payload within a checkpoint directory."""
+  model_path = directory / 'model.pt'  # Preferred filename introduced in recent checkpoints.
+  if model_path.exists():  # Use the canonical filename when present.
+    return model_path  # Return the matching path immediately.
+  legacy_candidates = sorted(directory.glob('*.pt'))  # Gather legacy filenames such as step_*.pt.
+  for candidate in legacy_candidates:  # Iterate over available legacy files.
+    if candidate.is_file():  # Ensure the candidate is a regular file before returning.
+      return candidate  # Provide the first matching legacy checkpoint path.
+  return None  # Signal that no recognizable payload was found in the directory.
+
+
 def list_step_checkpoints(directory: Path) -> List[Tuple[int, Path]]:
   ckpts: List[Tuple[int, Path]] = []
   for path in directory.iterdir():
@@ -256,8 +268,7 @@ def list_step_checkpoints(directory: Path) -> List[Tuple[int, Path]]:
     match = STEP_DIR_PATTERN.match(path.name)
     if not match:
       continue
-    model_path = path / 'model.pt'
-    if not model_path.exists():
+    if resolve_checkpoint_model_path(path) is None:
       continue
     step = int(match.group(1))
     ckpts.append((step, path))
@@ -268,8 +279,8 @@ def list_step_checkpoints(directory: Path) -> List[Tuple[int, Path]]:
 def find_latest_checkpoint(directory: Path, device: torch.device) -> Optional[Tuple[int, Path, dict]]:
   candidates: List[Tuple[int, Path]] = list_step_checkpoints(directory)
   final_dir = directory / 'final'
-  final_model = final_dir / 'model.pt'
-  if final_model.exists():
+  final_model = resolve_checkpoint_model_path(final_dir)
+  if final_model is not None:
     try:
       data = torch.load(final_model, map_location=device)
       candidates.append((int(data.get('step', 0)), final_dir))
@@ -279,7 +290,9 @@ def find_latest_checkpoint(directory: Path, device: torch.device) -> Optional[Tu
     return None
   candidates.sort(key=lambda item: item[0])
   step, path = candidates[-1]
-  model_path = path / 'model.pt'
+  model_path = resolve_checkpoint_model_path(path)
+  if model_path is None:
+    return None
   data = torch.load(model_path, map_location=device)
   return step, path, data
 
