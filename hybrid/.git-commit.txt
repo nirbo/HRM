@@ -1,21 +1,16 @@
-Title: Add configurable evaluation batch size support
+Title: Log eval batch push in statefile
 
 Summary:
-- Introduce `--eval_batch_size` CLI parameter (with optional config override) and resolve the effective validation batch size alongside training defaults.
-- Update synthetic and dataset iterators to honor the dedicated eval batch size while leaving training throughput unchanged.
-- Document the new flag in TRAINING.md and surface `eval_batch_size` in the default config for discoverability.
-- Extend llm.state with a detailed worklog capturing the new session and validations.
+- Append llm.state with a record of the `git push` operation for the eval batch size update.
+- No code or documentation behavior changes.
 
 Files Touched:
-- src/hrm_lm/training/train.py
-- src/hrm_lm/configs/default.yaml
-- TRAINING.md
 - llm.state
 - .git-commit.txt
 - llm.state.bak (local backup, untracked)
 
 Validation:
-- python -m compileall src/hrm_lm/training/train.py
+- Not applicable (metadata-only).
 
 Follow-ups:
-- Optional runtime smoke test to compare throughput/loss when using smaller eval batches.
+- None.
