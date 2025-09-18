@@ -216,6 +216,7 @@ def main():
   parser.add_argument('--dry_run', action='store_true')
   parser.add_argument('--dataset', default=None)
   parser.add_argument('--batch_size', type=int, default=None)
+  parser.add_argument('--eval_batch_size', type=int, default=None)  # optional override for validation batch sizing
   parser.add_argument('--optimizer', default='adamw', choices=['adamw', 'adamw_8bit'])
   parser.add_argument('--learning_rate', type=float, default=None)
   parser.add_argument('--warmup_steps', type=int, default=0)
@@ -242,6 +243,13 @@ def main():
     raise ValueError('batch size must be positive')
   cfg.train.batch_size = effective_batch_size
 
+  eval_batch_cfg = getattr(cfg.train, 'eval_batch_size', None)  # pull optional eval batch size from config when present
+  eval_batch_candidate = args.eval_batch_size if args.eval_batch_size is not None else eval_batch_cfg  # prefer CLI override when provided
+  effective_eval_batch_size = effective_batch_size if eval_batch_candidate is None else int(eval_batch_candidate)  # fallback to train batch size when unset
+  if effective_eval_batch_size <= 0:  # ensure evaluation batch size remains valid
+    raise ValueError('evaluation batch size must be positive')  # raise explicit error for invalid configuration
+  cfg.train.eval_batch_size = effective_eval_batch_size  # persist resolved evaluation batch size in config
+
   effective_seq_len = args.max_seq_len if args.max_seq_len is not None else cfg.train.seq_len
   if effective_seq_len <= 0:
     raise ValueError('max sequence length must be positive')
@@ -259,13 +267,13 @@ def main():
     tokenizer, dataset = build_synthetic_dataset(n=2000, seed=cfg.train.seed)
     dataset_size = len(dataset)
 
-    def data_iter():
-      while True:
-        batch = [random.choice(dataset) for _ in range(effective_batch_size)]
-        yield pad_batch(batch)
+    def data_iter(batch_size: int):  # create a synthetic iterator parameterized by batch size
+      while True:  # keep yielding batches indefinitely for streaming training/eval
+        batch = [random.choice(dataset) for _ in range(batch_size)]  # sample synthetic examples with replacement
+        yield pad_batch(batch)  # pad sequences to shared length
 
-    iterator = data_iter()
-    val_iterator = data_iter()
+    iterator = data_iter(effective_batch_size)  # training iterator uses resolved train batch size
+    val_iterator = data_iter(effective_eval_batch_size)  # evaluation iterator uses resolved eval batch size
   else:
     dataset_path = Path(args.dataset)
     if not dataset_path.exists() or not dataset_path.is_dir():
@@ -278,7 +286,7 @@ def main():
       raise ValueError(f'No training samples found in {dataset_path}')
     console.print(f'[grey70]Loaded {dataset_size} training samples from {dataset_path}[/grey70]')
     iterator = dataset_iterator(train_data, effective_batch_size, pad_id=pad_id, shuffle=True)
-    val_iterator = dataset_iterator(val_data, effective_batch_size, pad_id=pad_id, shuffle=False)
+    val_iterator = dataset_iterator(val_data, effective_eval_batch_size, pad_id=pad_id, shuffle=False)  # evaluation iterator uses dedicated batch size
 
   model = make_model(cfg).to(device)
   optimizer = make_optimizer(args.optimizer, model, cfg, base_lr)

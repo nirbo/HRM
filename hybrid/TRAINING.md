@@ -60,6 +60,7 @@ Key behaviors:
 - `--save_best_model` maintains `runs/arithmetic-demo/best-model/best.pt`, updated whenever validation loss improves.
 - `--optimizer` defaults to `adamw`; pass `--optimizer adamw_8bit` (requires `pip install bitsandbytes`) for 8-bit weights.
 - `--learning_rate`, `--warmup_steps`, and `--lr_scheduler` control LR warmup and decay (defaults to cosine).
+- `--eval_batch_size` lets you shrink or expand validation throughput independently of training batches (defaults to the training batch size).
 - `--log_steps` governs how often training metrics are emitted with Rich-formatted output.
 - `--dataset <dir>` can point to a processed corpus (with `train/val.jsonl` and `meta.json`); metadata adjusts vocab size automatically.
 - Mixed precision (`bf16` or `fp16`) engages `torch.autocast`; gradient clipping applies after each backward pass.
@@ -100,6 +101,7 @@ To add a custom dataset:
 | `--optimizer` | `adamw` | Optimizer choice (`adamw` or `adamw_8bit`; the latter requires `bitsandbytes`). |
 | `--learning_rate` | config value | Override optimizer learning rate. |
 | `--lr_scheduler` | `cosine` | Post-warmup decay strategy: `cosine`, `linear`, or `constant`. |
+| `--eval_batch_size` | matches train batch | Override validation batch size (falls back to training batch when omitted). |
 | `--warmup_steps` | `0` | Linear LR warmup steps before applying the selected scheduler. |
 | `--steps` | config value | Total optimization steps; overrides `--epochs` when >0. |
 | `--epochs` | `0` | Number of epochs (computed from dataset size) when `--steps` ≤ 0. |

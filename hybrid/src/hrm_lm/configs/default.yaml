@@ -35,6 +35,7 @@ optim:
 train:
   seed: 1337
   batch_size: 2
+  eval_batch_size: null
   seq_len: 256
   tgt_len: 64
   mixed_precision: bf16

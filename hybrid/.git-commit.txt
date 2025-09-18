@@ -1,15 +1,21 @@
-Title: Record push action in state log
+Title: Add configurable evaluation batch size support
 
 Summary:
-- Append llm.state with an entry documenting the `git push` invocation for traceability.
-- No code or documentation logic changed; this commit only extends the statefile audit trail.
+- Introduce `--eval_batch_size` CLI parameter (with optional config override) and resolve the effective validation batch size alongside training defaults.
+- Update synthetic and dataset iterators to honor the dedicated eval batch size while leaving training throughput unchanged.
+- Document the new flag in TRAINING.md and surface `eval_batch_size` in the default config for discoverability.
+- Extend llm.state with a detailed worklog capturing the new session and validations.
 
 Files Touched:
+- src/hrm_lm/training/train.py
+- src/hrm_lm/configs/default.yaml
+- TRAINING.md
 - llm.state
 - .git-commit.txt
+- llm.state.bak (local backup, untracked)
 
 Validation:
-- Not applicable (metadata update only).
+- python -m compileall src/hrm_lm/training/train.py
 
 Follow-ups:
-- None.
+- Optional runtime smoke test to compare throughput/loss when using smaller eval batches.
