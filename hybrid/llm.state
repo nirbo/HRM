@@ -1,10 +1,6 @@
 # Task State
 
-## Completed Actions
-- Added Rich-based progress visualization to `scripts/prepare_language_dataset.py`, showing file and sample counts while streaming parquet shards.
-- Script now prints a final summary of train/val sample counts and writes metadata as before.
-- Declared `pyarrow>=14` and `pandas>=2.3` in requirements so dataset conversion dependencies are explicit.
-
-## Verification
-- Not rerun on full dataset to avoid heavy I/O (logic-only change).
+## Recent Adjustments
+- Trainer logging now prints loss/grad/lr with 15 decimal places and formats ETA as `NNh:NNm`.
+- Dataset converter already supports multi-threaded batching (per previous update).
 

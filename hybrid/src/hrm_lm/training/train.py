@@ -188,10 +188,10 @@ def gradient_norm(model: nn.Module) -> float:
 
 def format_eta(seconds: float) -> str:
   if math.isinf(seconds) or seconds <= 0:
-    return '--:--'
+    return '--h:--m'
   minutes, _ = divmod(int(seconds + 0.5), 60)
   hours, minutes = divmod(minutes, 60)
-  return f"{hours:02d}:{minutes:02d}"
+  return f"{hours:02d}h:{minutes:02d}m"
 
 
 def format_speed(seconds_per_it: float) -> str:
@@ -403,9 +403,9 @@ def main():
     if global_step % log_steps == 0 or global_step == total_steps:
       parts = [
         f'[grey70]step {global_step}/{total_steps}[/grey70]',
-        f'[chartreuse4]loss {loss.item():.6f}[/chartreuse4]',
-        f'[steel_blue]grad {grad_norm:.6f}[/steel_blue]',
-        f'[dark_orange3]lr {current_lr:.6f}[/dark_orange3]',
+        f'[chartreuse4]loss {loss.item():.15f}[/chartreuse4]',
+        f'[steel_blue]grad {grad_norm:.15f}[/steel_blue]',
+        f'[dark_orange3]lr {current_lr:.15f}[/dark_orange3]',
         f'[orchid]eta {eta}[/orchid]',
         f'[medium_spring_green]{speed}[/medium_spring_green]',
       ]

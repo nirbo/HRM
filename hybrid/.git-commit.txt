@@ -1,11 +1,8 @@
-Support tokenizer parallelism and JSONL metadata
+Refine trainer log formatting
 
 Summary
-- Added CLI knobs for tokenizer parallelism/batch size, batching encode operations, and richer progress output during dataset preparation.
-- Trainer now reads `meta.json` (pad ID, vocab size), adjusts embeddings when needed, and logs dataset size when loading JSONL corpora.
-- Updated training guide with new dataset options; noted optional dependency installs.
+- Increased loss/grad/lr precision to 15 decimal places for easier monitoring.
+- Updated ETA rendering to `NNh:NNm` to emphasize hours/minutes.
 
 Files
-- scripts/prepare_language_dataset.py — encode batching, progress counters, thread controls.
-- src/hrm_lm/training/train.py — pad-aware batching, vocab override, dataset logging.
-- TRAINING.md — documentation refresh.
+- src/hrm_lm/training/train.py
