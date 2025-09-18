@@ -1,19 +1,10 @@
-Title: Default QA normalization to plain question/answer
+Commit Summary:
+- add merge_prepared_batches.py to stream chunked dataset outputs into consolidated train/val/meta artifacts with optional retention
+- extend prepare_language_dataset to support custom text fields, json inputs, and reuse tokenizer (prior change included)
+- accelerate dataset loading via multiprocessing option and heartbeat logging; expose --dataset_workers CLI flag
+- document merge workflow, dataset_workers flag, and loader progress in TRAINING.md; ignore redpajama-data checkout
+- update llm.state with detailed action log per AGENTS.md
 
-Summary:
-- Change scripts/normalize_qa_dataset.py to output prompts as raw questions and responses as raw answers by default (still configurable when context is needed).
-- Update TRAINING.md to explain the new defaults and how to include context explicitly.
-- Log the change in llm.state.
-
-Files Touched:
-- scripts/normalize_qa_dataset.py
-- TRAINING.md
-- llm.state
-- .git-commit.txt
-- llm.state.bak (local backup, untracked)
-
-Validation:
-- (No code execution required beyond existing tests).
-
-Follow-ups:
-- Regenerate normalized datasets to remove old "Question:/Answer:" scaffolding before the next training pass.
+Testing / Validation:
+- PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py
+- PYTHONPATH=src ./venv/bin/python -m compileall scripts/merge_prepared_batches.py

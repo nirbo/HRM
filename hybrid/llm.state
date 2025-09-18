@@ -273,3 +273,61 @@
 
 ### Open Issues
 - None.
+
+## Session 2025-09-18T16:21Z
+### Original Task Description
+- Resolve failures in chunked RedPajama preprocessing due to missing symlink targets.
+
+### Plan
+1. Review current chunk-based preprocessing setup and reproduce failing command context.
+2. Diagnose why chunk symlinks reference missing Parquet files and outline fix.
+3. Coordinate required code or script adjustments and document next actions.
+
+### Action Log
+- 2025-09-18T16:27Z: Cleaned manual_test symlink staging and tmp/redpj_test_output scratch directory after validation.
+- 2025-09-18T16:27Z: Regenerated manual chunk with absolute symlinks and confirmed prepare_language_dataset.py succeeds using tmp/redpj_symlinks/manual_test.
+- 2025-09-18T16:26Z: Determined broken symlinks stem from relative targets; plan to regenerate symlinks using absolute paths within chunk worker script.
+- 2025-09-18T16:25Z: Reproduced chunk failure using manual symlink batch; observed symlinks point to relative paths that resolve inside tmp/redpj_symlinks and break file lookup.
+- 2025-09-18T16:21Z: Initialized session and recorded plan for addressing chunk preprocessing errors.
+
+### Pending Steps
+- None; plan complete.
+### Current Summary
+- Validated that switching chunk symlinks to absolute paths resolves the missing file errors; ready to update parallel command accordingly.
+
+### Open Issues
+- None.
+
+## Session 2025-09-18T17:14Z
+### Original Task Description
+- Consolidate batch tokenizer outputs into unified train/val datasets without exhausting disk space.
+
+### Plan
+1. Assess batch outputs (file counts/sizes) under datasets/redpj/batches to quantify consolidation needs.
+2. Design low-footprint merging strategy (streaming concat + cleanup) and outline commands.
+3. Document plan in statefile and share execution steps with user.
+
+### Action Log
+- 2025-09-18T18:34Z: Documented merge utility and dataset_workers flag in TRAINING.md.
+- 2025-09-18T17:34Z: Added multiprocessing-enabled JSONL loader with chunked workers and CLI flag.
+- 2025-09-18T17:34Z: Validated updated trainer via PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py.
+- 2025-09-18T17:31Z: Evaluating multiprocessing options for dataset ingest to reduce load latency.
+- 2025-09-18T17:28Z: Added progressive logging to load_jsonl_dataset via console.status heartbeats.
+- 2025-09-18T17:28Z: Validated trainer syntax with PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py.
+- 2025-09-18T17:26Z: Evaluated warmup/lr guidance for merged dataset (5.6M samples) pending user query.
+- 2025-09-18T17:24Z: Confirmed merge output integrity (triple format) and noted readiness for training launch.
+- 2025-09-18T17:22Z: Authored scripts/merge_prepared_batches.py with streaming concat and cleanup logic.
+- 2025-09-18T17:22Z: Validated syntax via PYTHONPATH=src ./venv/bin/python -m compileall scripts/merge_prepared_batches.py.
+- 2025-09-18T17:20Z: Selected integration approach: new merge script to stream chunk outputs into combined dataset and remove chunk directories.
+- 2025-09-18T17:17Z: Drafted streaming merge procedure (append chunk train/val into combined outputs, delete chunk files, regenerate aggregate meta).
+- 2025-09-18T17:15Z: Measured batch directory footprint (~101 GB) and verified per-chunk train/val/meta artifacts.
+- 2025-09-18T17:14Z: Recorded new session and plan for merging batch outputs.
+
+### Pending Steps
+- None; plan complete.
+
+### Current Summary
+- Merge utility integrated; trainer can load datasets faster via multiprocessing with visible progress heartbeats.
+
+### Open Issues
+- Bulk batch outputs consume significant disk space (≈100 GB).

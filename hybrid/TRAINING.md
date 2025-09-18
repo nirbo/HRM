@@ -30,6 +30,16 @@ PYTHONPATH=src uv run python scripts/prepare_language_dataset.py \
 If `--tokenizer` points to an existing `tokenizer.json`, it is reused; otherwise a new BPE tokenizer (Hugging Face format) is trained and saved alongside the processed dataset. The script writes `train.jsonl`, `val.jsonl`, the tokenizer JSON, and `meta.json` containing padding IDs and vocab size. Each sample stores `encoder_ids`, `decoder_input_ids`, and `labels` arrays of tokens ready for loading.
 Optional flags: `--tokenizer-num-threads` to cap CPU threads, `--tokenizer-batch-size` to control encoding batch size, and `--max-files` for quick smoke tests.
 
+Large datasets can be processed in parallel batches and merged without doubling disk usage via:
+
+```bash
+PYTHONPATH=src python scripts/merge_prepared_batches.py \
+  --batches datasets/redpj/batches \
+  --output-dir datasets/redpj/combined
+```
+
+This command streams each chunk’s `train.jsonl`/`val.jsonl` into consolidated files, writes an aggregated `meta.json`, and deletes chunk directories by default (pass `--keep-chunks` to retain them).
+
 For QA-style sources (SQuAD, TriviaQA, etc.), normalize schemas first:
 ```bash
 python scripts/normalize_qa_dataset.py \
@@ -123,12 +133,14 @@ To add a custom dataset:
 | `--save_best_model` | *flag* | When set, saves lowest-validation-loss model to `runs/<run-name>/best-model/best.pt`. |
 | `--max_seq_len` | config value | Truncate encoder/decoder sequences to this length. |
 | `--log_steps` | `10` | Emit Rich-formatted training metrics every N steps. |
+| `--dataset_workers` | `0` | Number of worker processes for JSONL loading (`0`/`1` = single-process). |
 | `--mixed_precision` | `none` | Precision mode: `none`, `bf16`, or `fp16` (fp16 requires CUDA). |
 | `--grad_clip` | `0.0` | L2 gradient clipping norm (disabled when ≤0). |
 
 Additional notes:
 - Checkpoint payloads include optimizer state, GradScaler state (when fp16), and the best validation loss so auto-resume reproduces optimizer momentum.
 - `final.pt` always reflects the last completed step, regardless of the checkpoint limit.
+- Dataset loading now reports progress heartbeats (every ~200k samples) and can be parallelized with `--dataset_workers` for faster ingest on large corpora.
 
 ## Useful Shortcuts
 

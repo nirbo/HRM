@@ -7,7 +7,7 @@ import random
 import os
 import gzip
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterator, List, Optional
 
 import pyarrow.parquet as pq
 from rich.progress import (
@@ -36,19 +36,47 @@ def clean_text(text: Optional[str]) -> Optional[str]:
   return normalized if normalized else None
 
 
-def iter_parquet_text(path: Path) -> Iterator[str]:
+def iter_parquet_text(path: Path, text_fields: Optional[List[str]]) -> Iterator[str]:
   pf = pq.ParquetFile(path)
-  for batch in pf.iter_batches(batch_size=512, columns=['revised_text', 'text', 'language']):
-    cols = batch.to_pydict()
-    revised = cols.get('revised_text') or []
-    original = cols.get('text') or []
-    languages = cols.get('language') or []
-    for rev, orig, lang in zip(revised, original, languages):
+  schema_names = set(pf.schema.names)
+
+  candidate_fields: List[str]
+  if text_fields:
+    candidate_fields = [field for field in text_fields if field in schema_names]
+  else:
+    candidate_fields = [field for field in ['revised_text', 'text'] if field in schema_names]
+
+  if not candidate_fields and 'raw_content' in schema_names:
+    candidate_fields = ['raw_content']
+
+  if not candidate_fields:
+    return
+
+  columns = list(candidate_fields)
+  lang_col = 'language' if 'language' in schema_names else None
+  if lang_col:
+    columns.append(lang_col)
+
+  for batch in pf.iter_batches(batch_size=512, columns=columns, use_threads=True):
+    data = batch.to_pydict()
+    first_field = candidate_fields[0]
+    values_len = len(data[first_field])
+    languages = data.get('language') or [None] * values_len
+
+    for idx in range(values_len):
+      lang = languages[idx]
       if lang and lang != 'en':
         continue
-      text = clean_text(rev) or clean_text(orig)
-      if text:
-        yield text
+
+      text_value = None
+      for field in candidate_fields:
+        field_value = data[field][idx]
+        if field_value:
+          text_value = clean_text(field_value)
+          if text_value:
+            break
+      if text_value:
+        yield text_value
 
 
 
@@ -86,10 +114,10 @@ def build_sample_text(record: dict) -> Optional[str]:
     parts.append(response.strip())
   return '\n'.join(parts) if parts else None
 
-def iter_source_text(path: Path) -> Iterator[str]:
+def iter_source_text(path: Path, text_fields: Optional[List[str]]) -> Iterator[str]:
   suffix = path.suffix.lower()
   if suffix == '.parquet':
-    yield from iter_parquet_text(path)
+    yield from iter_parquet_text(path, text_fields)
   elif suffix in {'.jsonl', '.jsonl.gz'}:
     yield from iter_jsonl_text(path)
   elif suffix == '.json':
@@ -102,7 +130,7 @@ def iter_source_text(path: Path) -> Iterator[str]:
 # ---------------------------------------------------------------------------
 
 
-def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, vocab_size: int, tokenizer_threads: int, tokenizer_batch: int, max_seq_len: int, val_ratio: float, seed: int, max_files: Optional[int] = None) -> None:
+def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, vocab_size: int, tokenizer_threads: int, tokenizer_batch: int, max_seq_len: int, val_ratio: float, seed: int, max_files: Optional[int] = None, text_fields: Optional[List[str]] = None) -> None:
   random.seed(seed)
   dest_dir.mkdir(parents=True, exist_ok=True)
 
@@ -130,7 +158,7 @@ def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, voca
 
     def text_iterator():
       for file_path in source_files:
-        yield from iter_source_text(file_path)
+        yield from iter_source_text(file_path, text_fields)
 
     tokenizer.train_from_iterator(text_iterator(), trainer=trainer)
     tokenizer.save(str(tokenizer_path))
@@ -202,7 +230,7 @@ def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, voca
           progress.update(samples_task, advance=emitted)
           buffer = []
 
-        for text in iter_source_text(source_path):
+        for text in iter_source_text(source_path, text_fields):
           buffer.append(text)
           if len(buffer) >= tokenizer_batch:
             flush_buffer()
@@ -242,6 +270,8 @@ if __name__ == '__main__':
   parser.add_argument('--val-ratio', type=float, default=0.02)
   parser.add_argument('--seed', type=int, default=1337)
   parser.add_argument('--max-files', type=int, default=None, help='Optional limit on number of parquet files to process (useful for smoke tests).')
+  parser.add_argument('--text-field', action='append', dest='text_fields', default=None,
+                      help='Name of a Parquet column to treat as text. May be provided multiple times. Defaults to revised_text/text.')
   args = parser.parse_args()
 
   tokenizer_path = args.tokenizer or (args.dest / 'tokenizer.json')
@@ -256,4 +286,5 @@ if __name__ == '__main__':
     val_ratio=args.val_ratio,
     seed=args.seed,
     max_files=args.max_files,
+    text_fields=args.text_fields,
   )

@@ -2,6 +2,7 @@
 import contextlib
 import json
 import math
+import multiprocessing as mp  # Provide worker pools for parallel dataset parsing
 import os
 import random
 import re
@@ -68,45 +69,76 @@ def demo_batch(cfg, device: torch.device, batch_size: int):
   return x, y_in, y
 
 
-def load_jsonl_dataset(directory: Path):
-  train_file = directory / 'train.jsonl'
-  val_file = directory / 'val.jsonl'
-  meta_file = directory / 'meta.json'
-  if not train_file.exists():
-    raise ValueError(f"train.jsonl not found in {directory}")
-  if not val_file.exists():
-    raise ValueError(f"val.jsonl not found in {directory}")
+def load_jsonl_dataset(directory: Path, workers: int = 1):
+  train_file = directory / 'train.jsonl'  # Locate the training split within the dataset directory.
+  val_file = directory / 'val.jsonl'  # Locate the validation split within the dataset directory.
+  meta_file = directory / 'meta.json'  # Locate optional metadata describing tokenizer and padding parameters.
+  if not train_file.exists():  # Ensure the training split is available before continuing.
+    raise ValueError(f"train.jsonl not found in {directory}")  # Abort with a helpful error when the split is missing.
+  if not val_file.exists():  # Ensure the validation split is present as well.
+    raise ValueError(f"val.jsonl not found in {directory}")  # Abort with a helpful error when the split is missing.
 
-  pad_id = 0
-  vocab_override = None
-  tokenizer_path = None
-  if meta_file.exists():
-    with meta_file.open('r', encoding='utf-8') as f:
-      meta = json.load(f)
-      pad_id = int(meta.get('pad_id', 0))
-      vocab_override = meta.get('vocab_size')
-      tokenizer_path = meta.get('tokenizer_file')
+  pad_id = 0  # Default padding token id used when metadata does not specify one.
+  vocab_override = None  # Placeholder for overriding vocabulary size sourced from metadata.
+  tokenizer_path = None  # Placeholder for referencing the tokenizer artifact path.
+  if meta_file.exists():  # Load metadata when the optional file is present.
+    with meta_file.open('r', encoding='utf-8') as f:  # Open the metadata file with UTF-8 decoding.
+      meta = json.load(f)  # Deserialize the metadata JSON payload.
+      pad_id = int(meta.get('pad_id', 0))  # Capture the padding token id if provided.
+      vocab_override = meta.get('vocab_size')  # Capture the tokenizer vocabulary size when present.
+      tokenizer_path = meta.get('tokenizer_file')  # Capture the tokenizer artifact path when present.
 
-  def read_file(path: Path):
-    samples = []
-    with path.open('r', encoding='utf-8') as f:
-      for line in f:
-        sample = json.loads(line)
-        enc = sample.get('encoder_ids') or sample.get('input_ids')
-        dec = sample.get('decoder_input_ids') or enc
-        labels = sample.get('labels') or sample.get('targets')
-        if enc is None or dec is None or labels is None:
-          continue
-        samples.append((enc, dec, labels))
-    return samples
+  def read_file(path: Path, label: str):  # Helper that streams a JSONL split into memory.
+    samples = []  # Accumulate decoded samples for the requested split.
+    samples_loaded = 0  # Track how many valid samples have been ingested.
+    heartbeat = 200000  # Emit a progress heartbeat every 200k samples.
+    next_ping = heartbeat  # Define the first sample threshold for progress output.
+    if workers <= 1:  # Fall back to sequential loading when only one worker is requested.
+      with console.status(f'[grey50]loading {label} split from {path}...[/grey50]', spinner='dots'):  # Display a spinner while parsing the file.
+        with path.open('r', encoding='utf-8') as handle:  # Open the JSONL file for streaming.
+          for line in handle:  # Iterate over each raw record in the split.
+            parsed = _parse_json_line(line)  # Decode the JSON payload using the shared helper.
+            if parsed is None:  # Skip malformed records that fail validation.
+              continue  # Advance to the next record without counting the invalid sample.
+            samples.append(parsed)  # Store the decoded sample for later batching.
+            samples_loaded += 1  # Increment the count of successfully ingested samples.
+            if samples_loaded >= next_ping:  # Emit progress once the next heartbeat threshold is reached.
+              console.print(f'[grey58]{label} samples processed: {samples_loaded:,}[/grey58]', soft_wrap=False, overflow='crop')  # Provide visibility into loader progress.
+              next_ping += heartbeat  # Schedule the next heartbeat threshold.
+    else:  # Engage multiprocessing when additional workers are requested.
+      chunk_size = 8192  # Dispatch JSON lines to workers in manageable blocks.
+      with console.status(f'[grey50]loading {label} split from {path} with {workers} workers...[/grey50]', spinner='dots'):  # Display spinner with worker count context.
+        with path.open('r', encoding='utf-8') as handle:  # Open the JSONL file for streaming.
+          def chunk_generator():  # Create a generator that yields line batches to the worker pool.
+            chunk = []  # Initialize the current chunk buffer.
+            for line in handle:  # Stream each record from the file.
+              chunk.append(line)  # Append the record to the active chunk.
+              if len(chunk) >= chunk_size:  # When the chunk reaches the configured size, emit it.
+                yield chunk  # Yield the populated chunk to the caller.
+                chunk = []  # Reset the chunk buffer for subsequent records.
+            if chunk:  # Emit any trailing records that did not fill a complete chunk.
+              yield chunk  # Yield the final partial chunk to the caller.
 
-  train_data = read_file(train_file)
-  val_data = read_file(val_file)
-  if not train_data:
-    raise ValueError(f'No training samples found in {train_file}')
-  if not val_data:
-    raise ValueError(f'No validation samples found in {val_file}')
-  return train_data, val_data, pad_id, vocab_override, tokenizer_path
+          with mp.Pool(processes=workers) as pool:  # Launch a worker pool for parallel decoding.
+            for parsed_chunk in pool.imap(_parse_jsonl_chunk, chunk_generator(), chunksize=1):  # Stream decoded results back in order.
+              if not parsed_chunk:  # Skip empty batches to avoid unnecessary bookkeeping.
+                continue  # Continue retrieving additional chunks from the pool.
+              samples.extend(parsed_chunk)  # Append the decoded samples to the aggregate buffer.
+              samples_loaded += len(parsed_chunk)  # Update the total number of ingested samples.
+              if samples_loaded >= next_ping:  # Emit progress once the next heartbeat threshold is reached.
+                console.print(f'[grey58]{label} samples processed: {samples_loaded:,}[/grey58]', soft_wrap=False, overflow='crop')  # Provide visibility into loader progress.
+                next_ping += heartbeat  # Schedule the next heartbeat threshold.
+    console.print(f'[grey70]{label} split loaded: {samples_loaded:,} samples[/grey70]', soft_wrap=False, overflow='crop')  # Summarize the final sample count for the split.
+    return samples  # Hand the accumulated samples back to the caller.
+
+  train_data = read_file(train_file, 'train')  # Load the training split using the configured worker count.
+  val_data = read_file(val_file, 'val')  # Load the validation split using the configured worker count.
+  if not train_data:  # Safeguard against missing training data after parsing.
+    raise ValueError(f'No training samples found in {train_file}')  # Abort when the training split produced no usable samples.
+  if not val_data:  # Safeguard against missing validation data after parsing.
+    raise ValueError(f'No validation samples found in {val_file}')  # Abort when the validation split produced no usable samples.
+  return train_data, val_data, pad_id, vocab_override, tokenizer_path  # Provide the dataset payload and metadata to the caller.
+
 
 
 def dataset_iterator(samples, batch_size: int, pad_id: int, shuffle: bool) -> Iterator:
@@ -118,6 +150,26 @@ def dataset_iterator(samples, batch_size: int, pad_id: int, shuffle: bool) -> It
       if not batch_samples:
         continue
       yield pad_batch(list(batch_samples), pad_id=pad_id)
+
+
+def _parse_json_line(line: str):
+  sample = json.loads(line)  # Decode the raw JSON payload into a Python dictionary.
+  enc = sample.get('encoder_ids') or sample.get('input_ids')  # Retrieve encoder token ids from supported keys.
+  dec = sample.get('decoder_input_ids') or enc  # Retrieve decoder input ids, defaulting to encoder ids when absent.
+  labels = sample.get('labels') or sample.get('targets')  # Retrieve supervision labels from supported keys.
+  if enc is None or dec is None or labels is None:  # Skip malformed entries missing the required tensors.
+    return None  # Signal to the caller that this line should be ignored.
+  return enc, dec, labels  # Return the decoded sample triple for downstream batching.
+
+
+def _parse_jsonl_chunk(lines: List[str]):
+  parsed = []  # Accumulate decoded samples drawn from the provided chunk.
+  for line in lines:  # Iterate over each serialized record inside the chunk.
+    sample = _parse_json_line(line)  # Decode the JSON payload for the current record.
+    if sample is None:  # Skip records that fail validation.
+      continue  # Continue with the next record in the chunk.
+    parsed.append(sample)  # Append valid samples to the chunk buffer.
+  return parsed  # Return all valid samples extracted from this chunk.
 
 
 STEP_DIR_PATTERN = re.compile(r'^step_(\d+)$')
@@ -265,9 +317,11 @@ def main():
   parser.add_argument('--save_best_model', action='store_true')
   parser.add_argument('--max_seq_len', type=int, default=None)
   parser.add_argument('--log_steps', type=int, default=10)
+  parser.add_argument('--dataset_workers', type=int, default=0, help='Number of worker processes for JSONL loading (0 = single process).')  # Allow callers to opt into multiprocessing during dataset ingest.
   args = parser.parse_args()
 
   cfg = OmegaConf.load(args.config) if args.config else OmegaConf.load(Path(__file__).parent.parent / 'configs' / 'default.yaml')
+  dataset_workers = args.dataset_workers if args.dataset_workers and args.dataset_workers > 0 else 1  # Determine how many processes to use when loading JSONL datasets.
   set_seed(cfg.train.seed)
 
   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -312,7 +366,7 @@ def main():
     dataset_path = Path(args.dataset)
     if not dataset_path.exists() or not dataset_path.is_dir():
       raise ValueError('dataset must be "synthetic" or a directory containing train.jsonl/val.jsonl')
-    train_data, val_data, pad_id, vocab_override, tokenizer_path = load_jsonl_dataset(dataset_path)
+    train_data, val_data, pad_id, vocab_override, tokenizer_path = load_jsonl_dataset(dataset_path, workers=dataset_workers)  # Load dataset splits using the configured worker pool.
     if vocab_override is not None and int(vocab_override) > cfg.model.vocab_size:
       cfg.model.vocab_size = int(vocab_override)
     dataset_size = len(train_data)

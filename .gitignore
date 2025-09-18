@@ -170,3 +170,4 @@ cython_debug/
 .serena/
 runs/
 uv.lock
+redpajama-data/
