@@ -1,24 +1,25 @@
-Title: Backfill checkpoint artifacts
+Title: Remove checkpoint artifacts from repository
 
 Summary:
-- Copy tokenizer.json and meta.json into existing run/test-1 checkpoint directories.
-- Emit step_*.yaml configs for legacy checkpoints to mirror new trainer behavior.
-- Record these updates in llm.state.
+- Delete previously committed tokenizer/config artifacts under runs/test-1 to keep checkpoints local-only.
+- Leave trainer changes that copy artifacts on disk while ensuring git ignores them.
+- Document the removal in llm.state.
 
 Files Touched:
-- runs/test-1/best-model/meta.json
-- runs/test-1/best-model/tokenizer.json
-- runs/test-1/checkpoints/meta.json
-- runs/test-1/checkpoints/tokenizer.json
-- runs/test-1/checkpoints/step_66000.yaml
-- runs/test-1/checkpoints/step_67000.yaml
-- runs/test-1/checkpoints/step_68000.yaml
+- runs/test-1/best-model/best.yaml (removed)
+- runs/test-1/best-model/meta.json (removed)
+- runs/test-1/best-model/tokenizer.json (removed)
+- runs/test-1/checkpoints/meta.json (removed)
+- runs/test-1/checkpoints/step_66000.yaml (removed)
+- runs/test-1/checkpoints/step_67000.yaml (removed)
+- runs/test-1/checkpoints/step_68000.yaml (removed)
+- runs/test-1/checkpoints/tokenizer.json (removed)
 - llm.state
 - .git-commit.txt
 - llm.state.bak (local backup, untracked)
 
 Validation:
-- Not applicable (artifact backfill only).
+- Not applicable (file removal only).
 
 Follow-ups:
-- None.
+- Recreate local artifact copies after commit if needed (untracked).
