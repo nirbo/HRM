@@ -2,6 +2,7 @@
 """Normalize QA-style datasets into prompt/response JSONL records."""
 import argparse
 import json
+import os
 import random
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
@@ -11,6 +12,9 @@ import pyarrow.ipc as pa_ipc
 import pyarrow.parquet as pq
 
 Record = Dict[str, Any]
+
+THREAD_ENV_VARS = ('RAYON_NUM_THREADS', 'TOKENIZERS_PARALLELISM')
+
 
 
 def _tokenize_field(expr: str) -> Sequence[Union[str, int]]:
@@ -120,11 +124,16 @@ def main() -> None:
   parser.add_argument('--context-field', default=None, help='Optional field expression for additional context')
   parser.add_argument('--prompt-template', default='Question: {question}\nAnswer:', help='Template for prompt text')
   parser.add_argument('--response-template', default='{answer}', help='Template for response text')
+  parser.add_argument('--num-threads', type=int, default=0, help='Number of threads to use (0 = library default)')
   parser.add_argument('--shuffle', action='store_true', help='Shuffle records before writing')
   parser.add_argument('--seed', type=int, default=1337, help='Random seed for shuffling')
   parser.add_argument('--max-records', type=int, default=None, help='Optional cap on number of records to emit')
   parser.add_argument('--skip-missing', action='store_true', help='Skip samples missing question/answer (default: False)')
   args = parser.parse_args()
+
+  if args.num_threads > 0:
+    os.environ['RAYON_NUM_THREADS'] = str(args.num_threads)
+    os.environ['TOKENIZERS_PARALLELISM'] = 'true'
 
   records = list(load_records(args.input))
   if not records:

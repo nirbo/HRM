@@ -1,13 +1,11 @@
-Title: Add QA normalization utility
+Title: Add thread control to QA normalizer
 
 Summary:
-- Introduce scripts/normalize_qa_dataset.py to unify disparate QA datasets into prompt/response JSONL with support for JSON/JSONL/Parquet/Arrow inputs, field selectors, templates, and optional shuffling.
-- Document the normalization workflow in TRAINING.md so dataset preparation covers QA sources.
-- Log the new tooling in llm.state for traceability.
+- Allow scripts/normalize_qa_dataset.py to set tokenizer-related thread counts via --num-threads, mirroring the prepare_dataset script.
+- Record the change in llm.state.
 
 Files Touched:
 - scripts/normalize_qa_dataset.py
-- TRAINING.md
 - llm.state
 - .git-commit.txt
 - llm.state.bak (local backup, untracked)

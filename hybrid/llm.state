@@ -16,6 +16,9 @@
 5. Validate changes conceptually and note any pending verification tasks.
 
 ### Action Log
+- 2025-09-18T05:58Z: Appended state log noting compile validation and added threading support.
+- 2025-09-18T05:58Z: Captured diff for --num-threads option in normalization script.
+- 2025-09-18T05:58Z: Added --num-threads option to normalization script and recompiled.
 - 2025-09-18T05:57Z: Authored QA normalization commit summary in `.git-commit.txt`.
 - 2025-09-18T05:57Z: Validated normalize_qa_dataset.py via compileall.
 - 2025-09-18T05:57Z: Documented QA normalization workflow in TRAINING.md.
