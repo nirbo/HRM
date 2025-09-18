@@ -28,6 +28,7 @@ PYTHONPATH=src uv run python scripts/prepare_language_dataset.py \
 ```
 
 If `--tokenizer` points to an existing `tokenizer.json`, it is reused; otherwise a new BPE tokenizer (Hugging Face format) is trained and saved alongside the processed dataset. The script writes `train.jsonl`, `val.jsonl`, the tokenizer JSON, and `meta.json` containing padding IDs and vocab size. Each sample stores `encoder_ids`, `decoder_input_ids`, and `labels` arrays of tokens ready for loading.
+Optional flags: `--tokenizer-num-threads` to cap CPU threads, `--tokenizer-batch-size` to control encoding batch size, and `--max-files` for quick smoke tests.
 
 
 ### Dry Run (sanity check)
@@ -60,6 +61,7 @@ Key behaviors:
 - `--optimizer` defaults to `adamw`; pass `--optimizer adamw_8bit` (requires `pip install bitsandbytes`) for 8-bit weights.
 - `--learning_rate` and `--warmup_steps` let you control LR scheduling (linear warmup → constant).
 - `--log_steps` governs how often training metrics are emitted with Rich-formatted output.
+- `--dataset <dir>` can point to a processed corpus (with `train/val.jsonl` and `meta.json`); metadata adjusts vocab size automatically.
 - Mixed precision (`bf16` or `fp16`) engages `torch.autocast`; gradient clipping applies after each backward pass.
 
 ### Loading a Custom Config

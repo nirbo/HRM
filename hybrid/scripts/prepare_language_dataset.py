@@ -4,6 +4,7 @@
 import argparse
 import json
 import random
+import os
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -54,7 +55,7 @@ def iter_text(path: Path) -> Iterator[str]:
 # ---------------------------------------------------------------------------
 
 
-def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, vocab_size: int, max_seq_len: int, val_ratio: float, seed: int, max_files: Optional[int] = None) -> None:
+def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, vocab_size: int, tokenizer_threads: int, tokenizer_batch: int, max_seq_len: int, val_ratio: float, seed: int, max_files: Optional[int] = None) -> None:
   random.seed(seed)
   dest_dir.mkdir(parents=True, exist_ok=True)
 
@@ -63,6 +64,10 @@ def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, voca
     parquet_files = parquet_files[:max_files]
   if not parquet_files:
     raise ValueError(f'No parquet files found in {source_dir}')
+
+  if tokenizer_threads > 0:
+    os.environ['RAYON_NUM_THREADS'] = str(tokenizer_threads)
+    os.environ['TOKENIZERS_PARALLELISM'] = 'true'
 
   # Train or load tokenizer -------------------------------------------------
   if tokenizer_path.exists():
@@ -99,6 +104,7 @@ def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, voca
     TextColumn('[progress.description]{task.description}'),
     BarColumn(),
     TaskProgressColumn(),
+    TextColumn('{task.completed:,} samples', justify='right'),
     TimeElapsedColumn(),
     TimeRemainingColumn(),
     transient=True,
@@ -110,37 +116,48 @@ def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, voca
       samples_task = progress.add_task('samples', total=None)
 
       for parquet_path in parquet_files:
+        buffer = []
+        def flush_buffer():
+          nonlocal buffer, train_count, val_count
+          if not buffer:
+            return
+          encodings = tokenizer.encode_batch(buffer)
+          emitted = 0
+          for encoding in encodings:
+            tokens = encoding.ids
+            if not tokens:
+              continue
+            start = 0
+            while start < len(tokens):
+              chunk_tokens = tokens[start:start + max_tokens]
+              start += max_tokens
+              if not chunk_tokens:
+                break
+              seq = [bos_id] + chunk_tokens + [eos_id]
+              decoder_in = seq[:-1]
+              labels = seq[1:]
+              sample = {
+                'encoder_ids': decoder_in,
+                'decoder_input_ids': decoder_in,
+                'labels': labels,
+              }
+              target_f = train_f if random.random() > val_ratio else val_f
+              json.dump(sample, target_f)
+              target_f.write('\n')
+              if target_f is train_f:
+                train_count += 1
+              else:
+                val_count += 1
+              emitted += 1
+          progress.update(samples_task, advance=emitted)
+          buffer = []
+
         for text in iter_text(parquet_path):
-          tokens = tokenizer.encode(text).ids
-          if not tokens:
-            continue
+          buffer.append(text)
+          if len(buffer) >= tokenizer_batch:
+            flush_buffer()
 
-          start = 0
-          while start < len(tokens):
-            chunk_tokens = tokens[start:start + max_tokens]
-            start += max_tokens
-            if not chunk_tokens:
-              break
-
-            seq = [bos_id] + chunk_tokens + [eos_id]
-            decoder_in = seq[:-1]
-            labels = seq[1:]
-
-            sample = {
-              'encoder_ids': decoder_in,
-              'decoder_input_ids': decoder_in,
-              'labels': labels,
-            }
-            target_f = train_f if random.random() > val_ratio else val_f
-            json.dump(sample, target_f)
-            target_f.write('\n')
-
-            if target_f is train_f:
-              train_count += 1
-            else:
-              val_count += 1
-            progress.update(samples_task, advance=1)
-
+        flush_buffer()
         progress.update(files_task, advance=1)
 
   meta = {
@@ -169,6 +186,8 @@ if __name__ == '__main__':
   parser.add_argument('--dest', type=Path, default=Path('datasets/anothy1-fineweb-edu-cleaned-simplified/processed'))
   parser.add_argument('--tokenizer', type=Path, default=None, help='Path to existing tokenizer.json; if missing, a new one is trained here.')
   parser.add_argument('--vocab-size', type=int, default=128000, help='Vocabulary size when training a new tokenizer.')
+  parser.add_argument('--tokenizer-num-threads', type=int, default=0, help='Number of threads tokenizers should use (0 = library default).')
+  parser.add_argument('--tokenizer-batch-size', type=int, default=256, help='Number of texts to encode per batch.')
   parser.add_argument('--max-seq-len', type=int, default=256)
   parser.add_argument('--val-ratio', type=float, default=0.02)
   parser.add_argument('--seed', type=int, default=1337)
@@ -181,6 +200,8 @@ if __name__ == '__main__':
     dest_dir=args.dest,
     tokenizer_path=tokenizer_path,
     vocab_size=args.vocab_size,
+    tokenizer_threads=args.tokenizer_num_threads,
+    tokenizer_batch=args.tokenizer_batch_size,
     max_seq_len=args.max_seq_len,
     val_ratio=args.val_ratio,
     seed=args.seed,

@@ -1,11 +1,11 @@
-Integrate HF tokenizer pipeline and JSONL dataset loading
+Support tokenizer parallelism and JSONL metadata
 
 Summary
-- Dataset converter now trains or loads a Hugging Face BPE tokenizer (`--vocab-size`, `--tokenizer`, `--max-files`) and streams parquet shards with Rich progress; outputs include pad/bos/eos IDs and vocab size in `meta.json`.
-- Trainer detects JSONL datasets: loads samples, pads with dataset-specific pad IDs, updates vocab size from metadata, and supports mixed batches alongside the synthetic fallback.
-- Documentation updated with new dataset workflow and CLI; dependency list now explicitly covers `pyarrow`/`pandas` from earlier change.
+- Added CLI knobs for tokenizer parallelism/batch size, batching encode operations, and richer progress output during dataset preparation.
+- Trainer now reads `meta.json` (pad ID, vocab size), adjusts embeddings when needed, and logs dataset size when loading JSONL corpora.
+- Updated training guide with new dataset options; noted optional dependency installs.
 
 Files
-- scripts/prepare_language_dataset.py — BPE tokenizer training/loading, progress bar, metadata.
-- src/hrm_lm/training/train.py — JSONL dataset loader/iterator, vocab/pad handling.
-- TRAINING.md — refreshed dataset prep instructions and CLI notes.
+- scripts/prepare_language_dataset.py — encode batching, progress counters, thread controls.
+- src/hrm_lm/training/train.py — pad-aware batching, vocab override, dataset logging.
+- TRAINING.md — documentation refresh.
