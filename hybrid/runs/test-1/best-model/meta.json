@@ -1,0 +1,11 @@
+{
+  "max_seq_len": 2048,
+  "train_samples": 89136,
+  "val_samples": 864,
+  "vocab_size": 131072,
+  "source_files": 30,
+  "tokenizer_file": "/home/nir/ml-tools/HRM/hybrid/datasets/anothy1-fineweb-edu-cleaned-simplified/processed/tokenizer.json",
+  "pad_id": 0,
+  "bos_id": 1,
+  "eos_id": 2
+}

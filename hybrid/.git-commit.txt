@@ -1,15 +1,24 @@
-Title: Record tokenizer push in state log
+Title: Backfill checkpoint artifacts
 
 Summary:
-- Append llm.state with the push event for the tokenizer artifact commit.
+- Copy tokenizer.json and meta.json into existing run/test-1 checkpoint directories.
+- Emit step_*.yaml configs for legacy checkpoints to mirror new trainer behavior.
+- Record these updates in llm.state.
 
 Files Touched:
+- runs/test-1/best-model/meta.json
+- runs/test-1/best-model/tokenizer.json
+- runs/test-1/checkpoints/meta.json
+- runs/test-1/checkpoints/tokenizer.json
+- runs/test-1/checkpoints/step_66000.yaml
+- runs/test-1/checkpoints/step_67000.yaml
+- runs/test-1/checkpoints/step_68000.yaml
 - llm.state
 - .git-commit.txt
 - llm.state.bak (local backup, untracked)
 
 Validation:
-- Not applicable (metadata update only).
+- Not applicable (artifact backfill only).
 
 Follow-ups:
 - None.
