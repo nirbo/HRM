@@ -16,6 +16,11 @@
 5. Validate changes conceptually and note any pending verification tasks.
 
 ### Action Log
+- 2025-09-18T05:57Z: Authored QA normalization commit summary in `.git-commit.txt`.
+- 2025-09-18T05:57Z: Validated normalize_qa_dataset.py via compileall.
+- 2025-09-18T05:57Z: Documented QA normalization workflow in TRAINING.md.
+- 2025-09-18T05:57Z: Implemented scripts/normalize_qa_dataset.py with multi-format support and templates.
+- 2025-09-18T05:57Z: Designed CLI (input/output, field selectors, templates, shuffle) and field extraction strategy for normalization tool.
 - 2025-09-18T05:23Z: Pushed generator update to origin/hybrid.
 - 2025-09-18T05:23Z: Committed generator auto-loading update (`git commit -m "Improve generator checkpoint loading"`).
 - 2025-09-18T05:23Z: Staged generator updates, statefile, and commit summary for auto-loading feature.
@@ -235,6 +240,27 @@
 
 ### Current Summary
 - Generator now auto-loads configs/tokenizers with GPU-preferred state loading.
+
+### Open Issues
+- None.
+
+## Session 2025-09-18T05:57Z
+### Original Task Description
+- Provide a CLI tool to normalize QA datasets into prompt/response JSONL with auto format detection.
+
+### Plan
+1. Design CLI interface and field extraction logic for the normalization tool.
+2. Implement script supporting json/jsonl/parquet/arrow inputs with prompt/response templates.
+3. Document usage, update statefile, and validate via compile/test.
+
+### Action Log
+- 2025-09-18T05:57Z: Initialized session for QA normalization utility.
+
+### Pending Steps
+- None; plan complete.
+
+### Current Summary
+- QA normalization utility documented and validated.
 
 ### Open Issues
 - None.

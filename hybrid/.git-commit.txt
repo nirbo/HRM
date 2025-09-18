@@ -1,15 +1,19 @@
-Title: Log generator push in statefile
+Title: Add QA normalization utility
 
 Summary:
-- Append llm.state with entries documenting the generator commit and push events.
+- Introduce scripts/normalize_qa_dataset.py to unify disparate QA datasets into prompt/response JSONL with support for JSON/JSONL/Parquet/Arrow inputs, field selectors, templates, and optional shuffling.
+- Document the normalization workflow in TRAINING.md so dataset preparation covers QA sources.
+- Log the new tooling in llm.state for traceability.
 
 Files Touched:
+- scripts/normalize_qa_dataset.py
+- TRAINING.md
 - llm.state
 - .git-commit.txt
 - llm.state.bak (local backup, untracked)
 
 Validation:
-- Not applicable.
+- python -m compileall scripts/normalize_qa_dataset.py
 
 Follow-ups:
 - None.

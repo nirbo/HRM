@@ -30,6 +30,16 @@ PYTHONPATH=src uv run python scripts/prepare_language_dataset.py \
 If `--tokenizer` points to an existing `tokenizer.json`, it is reused; otherwise a new BPE tokenizer (Hugging Face format) is trained and saved alongside the processed dataset. The script writes `train.jsonl`, `val.jsonl`, the tokenizer JSON, and `meta.json` containing padding IDs and vocab size. Each sample stores `encoder_ids`, `decoder_input_ids`, and `labels` arrays of tokens ready for loading.
 Optional flags: `--tokenizer-num-threads` to cap CPU threads, `--tokenizer-batch-size` to control encoding batch size, and `--max-files` for quick smoke tests.
 
+For QA-style sources (SQuAD, TriviaQA, etc.), normalize schemas first:
+```bash
+python scripts/normalize_qa_dataset.py \
+  --input squad/train.jsonl \
+  --output datasets/qa/squad_prompts.jsonl \
+  --question-field data.question \
+  --answer-field data.answers.text[0]
+```
+The tool auto-detects `.json`, `.jsonl`, `.parquet`, or `.arrow` inputs and emits prompt/response JSONL using configurable templates.
+
 
 ### Dry Run (sanity check)
 ```bash
