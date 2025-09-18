@@ -16,6 +16,7 @@
 5. Validate changes conceptually and note any pending verification tasks.
 
 ### Action Log
+- 2025-09-18T06:55Z: Updated QA normalization defaults to plain question/answer and documented new behavior.
 - 2025-09-18T06:47Z: Verified new checkpoint directory structure with tmp-test run (model/config per directory).
 - 2025-09-18T06:47Z: Restructured checkpoint saving into per-step directories with generic filenames and cleanup.
 - 2025-09-18T06:47Z: Added startup/resume logging in trainer and recompiled train.py.

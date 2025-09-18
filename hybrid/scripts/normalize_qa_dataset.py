@@ -122,7 +122,7 @@ def main() -> None:
   parser.add_argument('--question-field', required=True, help='Field expression for question (supports dotted/indexed paths)')
   parser.add_argument('--answer-field', required=True, help='Field expression for answer (supports dotted/indexed paths)')
   parser.add_argument('--context-field', default=None, help='Optional field expression for additional context')
-  parser.add_argument('--prompt-template', default='Question: {question}\nAnswer:', help='Template for prompt text')
+  parser.add_argument('--prompt-template', default='{question}', help='Template for prompt text')
   parser.add_argument('--response-template', default='{answer}', help='Template for response text')
   parser.add_argument('--num-threads', type=int, default=0, help='Number of threads to use (0 = library default)')
   parser.add_argument('--shuffle', action='store_true', help='Shuffle records before writing')

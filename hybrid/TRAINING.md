@@ -38,7 +38,7 @@ python scripts/normalize_qa_dataset.py \
   --question-field data.question \
   --answer-field data.answers.text[0]
 ```
-The tool auto-detects `.json`, `.jsonl`, `.parquet`, or `.arrow` inputs and emits prompt/response JSONL using configurable templates.
+The tool auto-detects `.json`, `.jsonl`, `.parquet`, or `.arrow` inputs and emits prompt/response JSONL using configurable templates. By default prompts are just questions and responses just answers; include flags such as `--context-field data.context --prompt-template "{question}\nContext: {context}"` when you need extra context.
 
 
 ### Dry Run (sanity check)

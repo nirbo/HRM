@@ -1,20 +1,19 @@
-Title: Store checkpoints in per-step directories
+Title: Default QA normalization to plain question/answer
 
 Summary:
-- Save each checkpoint into its own step_{NNNNNN}/ directory containing model.pt, config.yaml, and copied tokenizer/meta artifacts.
-- Adjust resume/rotation logic to work with directories and provide a "No checkpoint found" message on fresh runs.
-- Update best/final checkpoint handling to use generic filenames and ensure artifacts live alongside them.
+- Change scripts/normalize_qa_dataset.py to output prompts as raw questions and responses as raw answers by default (still configurable when context is needed).
+- Update TRAINING.md to explain the new defaults and how to include context explicitly.
 - Log the change in llm.state.
 
 Files Touched:
-- src/hrm_lm/training/train.py
+- scripts/normalize_qa_dataset.py
+- TRAINING.md
 - llm.state
 - .git-commit.txt
 - llm.state.bak (local backup, untracked)
 
 Validation:
-- python -m compileall src/hrm_lm/training/train.py
-- Quick smoke run (`--run_name tmp-test`) verifying new directory structure.
+- (No code execution required beyond existing tests).
 
 Follow-ups:
-- None.
+- Regenerate normalized datasets to remove old "Question:/Answer:" scaffolding before the next training pass.
