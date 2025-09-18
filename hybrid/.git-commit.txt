@@ -1,9 +1,9 @@
-Add progress bar to dataset converter
+Enable JSONL dataset training in trainer
 
 Summary
-- Wrapped the parquet-to-token pipeline with a Rich progress bar that tracks files processed and samples emitted.
-- Printed a completion summary and listed `pyarrow`/`pandas` as explicit dependencies in `requirements.txt`.
+- Added helpers to load tokenized datasets from `train.jsonl`/`val.jsonl` directories and stream batches with the existing `pad_batch` routine.
+- Trainer now accepts a dataset path (instead of only `synthetic`) and reports training sample counts, while still supporting the synthetic fallback.
+- Updated masking to use boolean tensors and reuse iterable batch loaders for validation.
 
 Files
-- scripts/prepare_language_dataset.py — progress visualization and summary print.
-- requirements.txt — added conversion dependencies (and noted optional causal-conv1d).
+- src/hrm_lm/training/train.py — JSONL loader, dataset iterator, CLI handling.

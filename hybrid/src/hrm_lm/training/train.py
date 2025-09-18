@@ -1,11 +1,12 @@
 # trainer with advanced logging and checkpointing
 import contextlib
+import json
 import math
 import os
 import random
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Iterator, List, Optional, Tuple
 
 import warnings
 import torch
@@ -63,6 +64,47 @@ def demo_batch(cfg, device: torch.device, batch_size: int):
   y_in = torch.randint(0, cfg.model.vocab_size, (batch_size, tgt_len), device=device)
   y = torch.randint(0, cfg.model.vocab_size, (batch_size, tgt_len), device=device)
   return x, y_in, y
+
+
+def load_jsonl_dataset(directory: Path):
+  train_file = directory / 'train.jsonl'
+  val_file = directory / 'val.jsonl'
+  if not train_file.exists():
+    raise ValueError(f"train.jsonl not found in {directory}")
+  if not val_file.exists():
+    raise ValueError(f"val.jsonl not found in {directory}")
+
+  def read_file(path: Path):
+    samples = []
+    with path.open('r', encoding='utf-8') as f:
+      for line in f:
+        sample = json.loads(line)
+        enc = sample.get('encoder_ids') or sample.get('input_ids')
+        dec = sample.get('decoder_input_ids') or enc
+        labels = sample.get('labels') or sample.get('targets')
+        if enc is None or dec is None or labels is None:
+          continue
+        samples.append((enc, dec, labels))
+    return samples
+
+  train_data = read_file(train_file)
+  val_data = read_file(val_file)
+  if not train_data:
+    raise ValueError(f'No training samples found in {train_file}')
+  if not val_data:
+    raise ValueError(f'No validation samples found in {val_file}')
+  return train_data, val_data
+
+
+def dataset_iterator(samples, batch_size: int, shuffle: bool) -> Iterator:
+  while True:
+    if shuffle:
+      random.shuffle(samples)
+    for start in range(0, len(samples), batch_size):
+      batch_samples = samples[start:start + batch_size]
+      if not batch_samples:
+        continue
+      yield pad_batch(list(batch_samples))
 
 
 def list_step_checkpoints(directory: Path) -> List[Tuple[int, Path]]:
@@ -240,7 +282,13 @@ def main():
     iterator = data_iter()
     val_iterator = data_iter()
   else:
-    raise ValueError('dataset required for training')
+    dataset_path = Path(args.dataset) if args.dataset is not None else None
+    if dataset_path is None or not dataset_path.exists() or not dataset_path.is_dir():
+      raise ValueError('dataset must be "synthetic" or a directory containing train.jsonl/val.jsonl')
+    train_data, val_data = load_jsonl_dataset(dataset_path)
+    dataset_size = len(train_data)
+    iterator = dataset_iterator(train_data, effective_batch_size, shuffle=True)
+    val_iterator = dataset_iterator(val_data, effective_batch_size, shuffle=False)
 
   total_steps = args.steps if args.steps > 0 else 0
   if total_steps <= 0:
