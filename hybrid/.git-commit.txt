@@ -1,25 +1,19 @@
-Title: Remove checkpoint artifacts from repository
+Title: Auto-load config/tokenizer in generator
 
 Summary:
-- Delete previously committed tokenizer/config artifacts under runs/test-1 to keep checkpoints local-only.
-- Leave trainer changes that copy artifacts on disk while ensuring git ignores them.
-- Document the removal in llm.state.
+- Resolve device with GPU preference and ingest configs from checkpoints when available.
+- Load tokenizer.json/meta.json artifacts beside checkpoints to generate human-readable text.
+- Maintain fallbacks for synthetic/simple tokenizers and document actions in llm.state.
 
 Files Touched:
-- runs/test-1/best-model/best.yaml (removed)
-- runs/test-1/best-model/meta.json (removed)
-- runs/test-1/best-model/tokenizer.json (removed)
-- runs/test-1/checkpoints/meta.json (removed)
-- runs/test-1/checkpoints/step_66000.yaml (removed)
-- runs/test-1/checkpoints/step_67000.yaml (removed)
-- runs/test-1/checkpoints/step_68000.yaml (removed)
-- runs/test-1/checkpoints/tokenizer.json (removed)
+- src/hrm_lm/inference/generate.py
 - llm.state
 - .git-commit.txt
 - llm.state.bak (local backup, untracked)
 
 Validation:
-- Not applicable (file removal only).
+- python -m compileall src/hrm_lm/inference/generate.py
+- PYTHONPATH=src ./venv/bin/python -m hrm_lm.inference.generate --checkpoint runs/test-1/best-model/best.pt --prompt "what is the capital of France?" --device cuda
 
 Follow-ups:
-- Recreate local artifact copies after commit if needed (untracked).
+- None.

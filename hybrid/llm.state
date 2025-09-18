@@ -16,6 +16,13 @@
 5. Validate changes conceptually and note any pending verification tasks.
 
 ### Action Log
+- 2025-09-18T05:23Z: Smoke-tested generator with new artifacts via `PYTHONPATH=src ./venv/bin/python -m hrm_lm.inference.generate ...`.
+- 2025-09-18T05:23Z: Ran `python -m compileall src/hrm_lm/inference/generate.py` to validate generator changes.
+- 2025-09-18T05:23Z: Normalized dataset hint handling in generator for auto artifacts.
+- 2025-09-18T05:23Z: Reworked generator main to auto-load config/tokenizer and prefer GPU map_location.
+- 2025-09-18T05:23Z: Added device/config/tokenizer helpers and HF adapter to generator.
+- 2025-09-18T05:23Z: Updated generator imports to include json/pathlib/tokenizers for automation.
+- 2025-09-18T05:23Z: Inspected current generator implementation via `sed` (no auto-config/tokenizer yet).
 - 2025-09-18T05:02Z: Removed committed checkpoint artifacts from git history per user request.
 - 2025-09-18T05:01Z: Pushed checkpoint artifact backfill commit to origin/hybrid.
 - 2025-09-18T05:01Z: Generated step_* YAML configs for legacy checkpoints via torch load script.
@@ -207,3 +214,24 @@
 ### Open Issues
 - None yet.
 - 2025-09-18T05:00Z: Observed generator output with synthetic tokenizer tokens (UNKs) after user test; planning tokenizer integration guidance.
+
+## Session 2025-09-18T05:23Z
+### Original Task Description
+- Update generator CLI to auto-load checkpoint config/tokenizer with GPU map_location by default.
+
+### Plan
+1. Inspect current generator module to understand config/tokenizer handling.
+2. Implement auto config/tokenizer loading with GPU-preferred checkpoint mapping.
+3. Update documentation/statefile and validate with compile/tests.
+
+### Action Log
+- 2025-09-18T05:23Z: Initialized session for generator improvements.
+
+### Pending Steps
+- None; plan complete.
+
+### Current Summary
+- Generator now auto-loads configs/tokenizers with GPU-preferred state loading.
+
+### Open Issues
+- None.
