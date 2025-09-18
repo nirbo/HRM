@@ -1,19 +1,20 @@
-Title: Extend prepare_dataset to read JSONL inputs
+Title: Store checkpoints in per-step directories
 
 Summary:
-- Teach scripts/prepare_language_dataset.py to consume .json/.jsonl/.jsonl.gz sources in addition to parquet.
-- Add prompt/response concatenation helpers and reuse tokenizer training across mixed formats.
-- Update llm.state with the change.
+- Save each checkpoint into its own step_{NNNNNN}/ directory containing model.pt, config.yaml, and copied tokenizer/meta artifacts.
+- Adjust resume/rotation logic to work with directories and provide a "No checkpoint found" message on fresh runs.
+- Update best/final checkpoint handling to use generic filenames and ensure artifacts live alongside them.
+- Log the change in llm.state.
 
 Files Touched:
-- scripts/prepare_language_dataset.py
+- src/hrm_lm/training/train.py
 - llm.state
 - .git-commit.txt
 - llm.state.bak (local backup, untracked)
 
 Validation:
-- python -m compileall scripts/prepare_language_dataset.py
-- PYTHONPATH=src ./venv/bin/python scripts/prepare_language_dataset.py --source datasets/combined --dest datasets/combined/processed --tokenizer datasets/combined/processed/tokenizer.json --vocab-size 131072 --max-seq-len 2048 --tokenizer-num-threads 30 --tokenizer-batch-size 4096 --val-ratio 0.1 --seed 1337 --max-files 1
+- python -m compileall src/hrm_lm/training/train.py
+- Quick smoke run (`--run_name tmp-test`) verifying new directory structure.
 
 Follow-ups:
 - None.

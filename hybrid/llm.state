@@ -16,6 +16,9 @@
 5. Validate changes conceptually and note any pending verification tasks.
 
 ### Action Log
+- 2025-09-18T06:47Z: Verified new checkpoint directory structure with tmp-test run (model/config per directory).
+- 2025-09-18T06:47Z: Restructured checkpoint saving into per-step directories with generic filenames and cleanup.
+- 2025-09-18T06:47Z: Added startup/resume logging in trainer and recompiled train.py.
 - 2025-09-18T06:05Z: Extended prepare_language_dataset.py to handle json/jsonl alongside parquet and recompiled.
 - 2025-09-18T05:58Z: Staged threading update commit summary.
 - 2025-09-18T05:58Z: Appended state log noting compile validation and added threading support.

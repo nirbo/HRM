@@ -4,6 +4,7 @@ import json
 import math
 import os
 import random
+import re
 import time
 import shutil
 from pathlib import Path
@@ -119,16 +120,21 @@ def dataset_iterator(samples, batch_size: int, pad_id: int, shuffle: bool) -> It
       yield pad_batch(list(batch_samples), pad_id=pad_id)
 
 
+STEP_DIR_PATTERN = re.compile(r'^step_(\d+)$')
+
+
 def list_step_checkpoints(directory: Path) -> List[Tuple[int, Path]]:
   ckpts: List[Tuple[int, Path]] = []
-  for path in directory.glob('step_*.pt'):
-    parts = path.stem.split('_')
-    if len(parts) != 2:
+  for path in directory.iterdir():
+    if not path.is_dir():
       continue
-    try:
-      step = int(parts[1])
-    except ValueError:
+    match = STEP_DIR_PATTERN.match(path.name)
+    if not match:
       continue
+    model_path = path / 'model.pt'
+    if not model_path.exists():
+      continue
+    step = int(match.group(1))
     ckpts.append((step, path))
   ckpts.sort(key=lambda item: item[0])
   return ckpts
@@ -136,18 +142,20 @@ def list_step_checkpoints(directory: Path) -> List[Tuple[int, Path]]:
 
 def find_latest_checkpoint(directory: Path, device: torch.device) -> Optional[Tuple[int, Path, dict]]:
   candidates: List[Tuple[int, Path]] = list_step_checkpoints(directory)
-  final_path = directory / 'final.pt'
-  if final_path.exists():
+  final_dir = directory / 'final'
+  final_model = final_dir / 'model.pt'
+  if final_model.exists():
     try:
-      data = torch.load(final_path, map_location=device)
-      candidates.append((int(data.get('step', 0)), final_path))
+      data = torch.load(final_model, map_location=device)
+      candidates.append((int(data.get('step', 0)), final_dir))
     except Exception:
       pass
   if not candidates:
     return None
   candidates.sort(key=lambda item: item[0])
   step, path = candidates[-1]
-  data = torch.load(path, map_location=device)
+  model_path = path / 'model.pt'
+  data = torch.load(model_path, map_location=device)
   return step, path, data
 
 
@@ -158,19 +166,19 @@ def enforce_checkpoint_limit(directory: Path, limit: int) -> None:
   while len(ckpts) > limit:
     _, path = ckpts.pop(0)
     try:
-      path.unlink()
+      shutil.rmtree(path)
     except FileNotFoundError:
       pass
 
 
-def persist_checkpoint_config(directory: Path, stem: str, cfg_serializable) -> None:
-  cfg_path = directory / f'{stem}.yaml'  # derive config file path alongside checkpoint
-  try:  # attempt to persist config without interrupting training
-    cfg_node = OmegaConf.create(cfg_serializable)  # rebuild OmegaConf node for serialization
-    OmegaConf.save(cfg_node, cfg_path)  # write config snapshot to disk
-  except Exception as exc:  # capture serialization issues
-    console.print(f'[bold red]Failed to write config {cfg_path}: {exc}[/bold red]')  # surface failure without aborting training
 
+
+def write_config(path: Path, cfg_serializable) -> None:
+  try:
+    cfg_node = OmegaConf.create(cfg_serializable)
+    OmegaConf.save(cfg_node, path)
+  except Exception as exc:
+    console.print(f'[bold red]Failed to write config {path}: {exc}[/bold red]')
 def ensure_checkpoint_artifacts(directory: Optional[Path], artifacts: List[Tuple[Path, str]]) -> None:
   if directory is None:
     return
@@ -390,6 +398,8 @@ def main():
       if start_step >= total_steps:
         console.print(f'[bold green]All {total_steps} steps already completed; exiting.[/bold green]')
         return
+    else:
+      console.print('[bold cyan]No checkpoint found; starting fresh.[/bold cyan]')
 
   warmup_steps = max(0, args.warmup_steps)
   log_steps = max(1, args.log_steps)
@@ -489,20 +499,31 @@ def main():
         best_loss = v_loss
         if best_dir is not None:
           best_payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, global_step, best_loss, v_loss, args.optimizer)
-          torch.save(best_payload, best_dir / 'best.pt')
-          persist_checkpoint_config(best_dir, 'best', cfg_serializable)  # persist matching config snapshot for best checkpoint
+          best_model_path = best_dir / 'model.pt'
+          torch.save(best_payload, best_model_path)
+          write_config(best_dir / 'config.yaml', cfg_serializable)
+          ensure_checkpoint_artifacts(best_dir, artifact_sources)
 
       if save_dir is not None:
         payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, global_step, best_loss, v_loss, args.optimizer)
-        ckpt_path = save_dir / f'step_{global_step}.pt'
-        torch.save(payload, ckpt_path)
-        persist_checkpoint_config(save_dir, f'step_{global_step}', cfg_serializable)  # persist config alongside step checkpoint
+        ckpt_dir = save_dir / f'step_{global_step:06d}'
+        if ckpt_dir.exists():
+          shutil.rmtree(ckpt_dir)
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        torch.save(payload, ckpt_dir / 'model.pt')
+        write_config(ckpt_dir / 'config.yaml', cfg_serializable)
+        ensure_checkpoint_artifacts(ckpt_dir, artifact_sources)
         enforce_checkpoint_limit(save_dir, args.checkpoint_limit)
 
   if save_dir is not None:
     final_payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, total_steps, best_loss, None, args.optimizer)
-    torch.save(final_payload, save_dir / 'final.pt')
-    persist_checkpoint_config(save_dir, 'final', cfg_serializable)  # persist config for final snapshot
+    final_dir = save_dir / 'final'
+    if final_dir.exists():
+      shutil.rmtree(final_dir)
+    final_dir.mkdir(parents=True, exist_ok=True)
+    torch.save(final_payload, final_dir / 'model.pt')
+    write_config(final_dir / 'config.yaml', cfg_serializable)
+    ensure_checkpoint_artifacts(final_dir, artifact_sources)
 
 if __name__ == '__main__':
   main()
