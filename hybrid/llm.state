@@ -308,6 +308,10 @@
 3. Document plan in statefile and share execution steps with user.
 
 ### Action Log
+- 2025-09-18T18:45Z: Observed OOM kill during 30-worker load; identified in-memory caching as root cause given 5.6M samples.
+- 2025-09-18T18:46Z: Added offset indexing with streaming JSONL iterator to avoid materializing entire dataset.
+- 2025-09-18T18:47Z: Implemented adaptive caching threshold and heartbeat-aware index builder; compileall verification passed.
+- 2025-09-18T18:35Z: Committed high-throughput dataset preparation and loading utilities and pushed to origin/hybrid.
 - 2025-09-18T18:34Z: Documented merge utility and dataset_workers flag in TRAINING.md.
 - 2025-09-18T17:34Z: Added multiprocessing-enabled JSONL loader with chunked workers and CLI flag.
 - 2025-09-18T17:34Z: Validated updated trainer via PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py.
@@ -327,7 +331,7 @@
 - None; plan complete.
 
 ### Current Summary
-- Merge utility integrated; trainer can load datasets faster via multiprocessing with visible progress heartbeats.
+- Streaming loader now indexes large JSONL corpora on disk, preventing OOM while retaining heartbeat visibility and optional multiprocessing for smaller caches.
 
 ### Open Issues
 - Bulk batch outputs consume significant disk space (≈100 GB).

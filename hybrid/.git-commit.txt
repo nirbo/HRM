@@ -1,10 +1,7 @@
 Commit Summary:
-- add merge_prepared_batches.py to stream chunked dataset outputs into consolidated train/val/meta artifacts with optional retention
-- extend prepare_language_dataset to support custom text fields, json inputs, and reuse tokenizer (prior change included)
-- accelerate dataset loading via multiprocessing option and heartbeat logging; expose --dataset_workers CLI flag
-- document merge workflow, dataset_workers flag, and loader progress in TRAINING.md; ignore redpajama-data checkout
-- update llm.state with detailed action log per AGENTS.md
+- add streamed JSONL loader with offset indexing to avoid OOM on multi-million sample corpora
+- integrate heartbeat-based indexing and on-demand batching; clamp dataset_workers to CPU count
+- document streaming behavior and worker semantics in TRAINING.md; log changes in llm.state
 
 Testing / Validation:
 - PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py
-- PYTHONPATH=src ./venv/bin/python -m compileall scripts/merge_prepared_batches.py
