@@ -5,6 +5,7 @@ import math
 import os
 import random
 import time
+import shutil
 from pathlib import Path
 from typing import Iterator, List, Optional, Tuple
 
@@ -77,11 +78,13 @@ def load_jsonl_dataset(directory: Path):
 
   pad_id = 0
   vocab_override = None
+  tokenizer_path = None
   if meta_file.exists():
     with meta_file.open('r', encoding='utf-8') as f:
       meta = json.load(f)
       pad_id = int(meta.get('pad_id', 0))
       vocab_override = meta.get('vocab_size')
+      tokenizer_path = meta.get('tokenizer_file')
 
   def read_file(path: Path):
     samples = []
@@ -102,7 +105,7 @@ def load_jsonl_dataset(directory: Path):
     raise ValueError(f'No training samples found in {train_file}')
   if not val_data:
     raise ValueError(f'No validation samples found in {val_file}')
-  return train_data, val_data, pad_id, vocab_override
+  return train_data, val_data, pad_id, vocab_override, tokenizer_path
 
 
 def dataset_iterator(samples, batch_size: int, pad_id: int, shuffle: bool) -> Iterator:
@@ -167,6 +170,20 @@ def persist_checkpoint_config(directory: Path, stem: str, cfg_serializable) -> N
     OmegaConf.save(cfg_node, cfg_path)  # write config snapshot to disk
   except Exception as exc:  # capture serialization issues
     console.print(f'[bold red]Failed to write config {cfg_path}: {exc}[/bold red]')  # surface failure without aborting training
+
+def ensure_checkpoint_artifacts(directory: Optional[Path], artifacts: List[Tuple[Path, str]]) -> None:
+  if directory is None:
+    return
+  for source, name in artifacts:
+    try:
+      if not source.exists():
+        continue
+      target = directory / name
+      if target.exists():
+        continue
+      shutil.copy2(source, target)
+    except Exception as exc:
+      console.print(f'[bold red]Failed to copy {source} to {directory}: {exc}[/bold red]')
 
 def build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, step: int, best_loss: float, val_loss: Optional[float], optimizer_name: str) -> dict:
   payload = {
@@ -270,6 +287,7 @@ def main():
 
   pad_id = 0
   dataset_size = 0
+  artifact_sources: List[Tuple[Path, str]] = []
 
   if not args.dataset or args.dataset == 'synthetic':
     tokenizer, dataset = build_synthetic_dataset(n=2000, seed=cfg.train.seed)
@@ -286,7 +304,7 @@ def main():
     dataset_path = Path(args.dataset)
     if not dataset_path.exists() or not dataset_path.is_dir():
       raise ValueError('dataset must be "synthetic" or a directory containing train.jsonl/val.jsonl')
-    train_data, val_data, pad_id, vocab_override = load_jsonl_dataset(dataset_path)
+    train_data, val_data, pad_id, vocab_override, tokenizer_path = load_jsonl_dataset(dataset_path)
     if vocab_override is not None and int(vocab_override) > cfg.model.vocab_size:
       cfg.model.vocab_size = int(vocab_override)
     dataset_size = len(train_data)
@@ -295,6 +313,16 @@ def main():
     console.print(f'[grey70]Loaded {dataset_size} training samples from {dataset_path}[/grey70]')
     iterator = dataset_iterator(train_data, effective_batch_size, pad_id=pad_id, shuffle=True)
     val_iterator = dataset_iterator(val_data, effective_eval_batch_size, pad_id=pad_id, shuffle=False)  # evaluation iterator uses dedicated batch size
+
+    meta_path = dataset_path / 'meta.json'
+    if meta_path.exists():
+      artifact_sources.append((meta_path.resolve(), meta_path.name))
+    if tokenizer_path:
+      tok_path = Path(tokenizer_path)
+      if not tok_path.is_absolute():
+        tok_path = (dataset_path / tok_path).resolve()
+      if tok_path.exists():
+        artifact_sources.append((tok_path, tok_path.name))
 
   model = make_model(cfg).to(device)
   optimizer = make_optimizer(args.optimizer, model, cfg, base_lr)
@@ -312,14 +340,17 @@ def main():
     base_dir = Path('runs') / args.run_name
     save_dir = base_dir / 'checkpoints'
     save_dir.mkdir(parents=True, exist_ok=True)
+    ensure_checkpoint_artifacts(save_dir, artifact_sources)
     if args.save_best_model:
       best_dir = base_dir / 'best-model'
       best_dir.mkdir(parents=True, exist_ok=True)
+      ensure_checkpoint_artifacts(best_dir, artifact_sources)
   elif args.save_dir:
     if args.save_best_model:
       raise ValueError('--save_best_model requires --run_name to place artifacts under runs/<run-name>/best-model/.')
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
+    ensure_checkpoint_artifacts(save_dir, artifact_sources)
   else:
     if args.save_best_model:
       raise ValueError('--save_best_model requires --run_name to place artifacts under runs/<run-name>/best-model/.')

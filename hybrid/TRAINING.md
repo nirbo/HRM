@@ -57,8 +57,8 @@ Key behaviors:
 - `--run_name` creates `runs/arithmetic-demo/checkpoints/` and stores artifacts there.
 - The trainer automatically resumes from the most recent checkpoint inside that directory (no extra flags needed).
 - `--checkpoint_limit 3` keeps only the 3 newest `step_*.pt` files (FIFO rotation) while leaving `final.pt` intact.
-- `--save_best_model` maintains `runs/arithmetic-demo/best-model/best.pt`, updated whenever validation loss improves. A matching `best.yaml` snapshot captures the config used for that checkpoint.
-- Each `step_*.pt` and `final.pt` checkpoint now includes a sibling `.yaml` config dump for reproducibility.
+- `--save_best_model` maintains `runs/arithmetic-demo/best-model/best.pt`, updated whenever validation loss improves. Matching `best.yaml`, `tokenizer.json`, and `meta.json` files live beside the weights for reproducibility.
+- Each `step_*.pt` and `final.pt` checkpoint now emits a sibling `.yaml` config plus copies of `tokenizer.json` and `meta.json` when available.
 - `--optimizer` defaults to `adamw`; pass `--optimizer adamw_8bit` (requires `pip install bitsandbytes`) for 8-bit weights.
 - `--learning_rate`, `--warmup_steps`, and `--lr_scheduler` control LR warmup and decay (defaults to cosine).
 - `--eval_batch_size` lets you shrink or expand validation throughput independently of training batches (defaults to the training batch size).

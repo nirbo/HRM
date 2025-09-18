@@ -16,6 +16,12 @@
 5. Validate changes conceptually and note any pending verification tasks.
 
 ### Action Log
+- 2025-09-18T05:00Z: Committed tokenizer/meta artifact persistence (`git commit -m "Copy tokenizer artifacts with checkpoints"`).
+- 2025-09-18T05:00Z: Staged trainer/doc/state updates for tokenizer artifact persistence.
+- 2025-09-18T05:00Z: Ran `python -m compileall src/hrm_lm/training/train.py` after artifact enhancements.
+- 2025-09-18T05:00Z: Ensured run directories receive tokenizer/meta snapshots and updated doc bullets.
+- 2025-09-18T05:00Z: Added artifact copy helper to place tokenizer/meta beside checkpoints.
+- 2025-09-18T05:00Z: Extended dataset loader to surface tokenizer path for artifact copying.
 - 2025-09-18T04:51Z: Pushed config persistence commit to origin/hybrid.
 - 2025-09-18T04:51Z: Amended commit to include final statefile updates.
 - 2025-09-18T04:51Z: Committed changes (`git commit -m "Persist checkpoint configs and backfill best snapshot"`).
@@ -191,7 +197,8 @@
 - None; plan complete.
 
 ### Current Summary
-- Config persistence automated; legacy checkpoint backfilled and docs/validation updated.
+- Checkpoints now carry configs, tokenizer, and meta; legacy best snapshot backfilled.
 
 ### Open Issues
 - None yet.
+- 2025-09-18T05:00Z: Observed generator output with synthetic tokenizer tokens (UNKs) after user test; planning tokenizer integration guidance.
