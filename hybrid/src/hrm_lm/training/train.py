@@ -640,6 +640,10 @@ def main():
           v_dec_mask = truncate_to_max_length(v_dec_mask, effective_seq_len).to(device).bool()
           v_out = model(v_enc, v_dec_in, enc_attn_mask=v_enc_mask, dec_attn_mask=v_dec_mask, labels=v_labels)
           v_loss = float(v_out['loss'].item())
+        del v_enc, v_dec_in, v_labels, v_enc_mask, v_dec_mask, v_out
+        if torch.cuda.is_available():
+          torch.cuda.empty_cache()
+          torch.cuda.ipc_collect()
       console.print(f'[orchid]eval:[/orchid] step {global_step}/{total_steps}, loss: {v_loss:.6f}')
       model.train()
 

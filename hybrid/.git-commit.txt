@@ -1,7 +1,6 @@
 Commit Summary:
-- add --reset_progress flag so checkpoints can seed new runs without reusing optimizer state
-- refactor resume logic to detect legacy step_*.pt files and optionally reset start step/best loss
-- document reset workflow in TRAINING.md and log changes in llm.state
+- free evaluation tensors and clear CUDA cache/ipc after validation to avoid post-eval OOM
+- document change in llm.state per AGENTS.md
 
 Testing / Validation:
 - PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py
