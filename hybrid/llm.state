@@ -16,6 +16,7 @@
 5. Validate changes conceptually and note any pending verification tasks.
 
 ### Action Log
+- 2025-09-18T04:51Z: Pushed config persistence commit to origin/hybrid.
 - 2025-09-18T04:51Z: Amended commit to include final statefile updates.
 - 2025-09-18T04:51Z: Committed changes (`git commit -m "Persist checkpoint configs and backfill best snapshot"`).
 - 2025-09-18T04:51Z: Staged trainer, docs, statefile, and backfilled best.yaml (forced add) for commit.
