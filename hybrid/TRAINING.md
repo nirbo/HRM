@@ -22,11 +22,12 @@ To convert parquet dumps (like the FineWeb derivative) into HRM-LM-ready token t
 PYTHONPATH=src uv run python scripts/prepare_language_dataset.py \
   --source datasets/anothy1-fineweb-edu-cleaned-simplified \
   --dest datasets/anothy1-fineweb-edu-cleaned-simplified/processed \
+  --vocab-size 128000 \
   --max-seq-len 256 \
   --val-ratio 0.02
 ```
 
-This produces `train.jsonl`, `val.jsonl`, a `tokenizer.json`, and `meta.json` with corpus statistics. Each line stores `encoder_ids`, `decoder_input_ids`, and `labels` arrays of integer tokens ready for loading.
+If `--tokenizer` points to an existing `tokenizer.json`, it is reused; otherwise a new BPE tokenizer (Hugging Face format) is trained and saved alongside the processed dataset. The script writes `train.jsonl`, `val.jsonl`, the tokenizer JSON, and `meta.json` containing padding IDs and vocab size. Each sample stores `encoder_ids`, `decoder_input_ids`, and `labels` arrays of tokens ready for loading.
 
 
 ### Dry Run (sanity check)

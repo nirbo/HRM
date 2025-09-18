@@ -69,10 +69,19 @@ def demo_batch(cfg, device: torch.device, batch_size: int):
 def load_jsonl_dataset(directory: Path):
   train_file = directory / 'train.jsonl'
   val_file = directory / 'val.jsonl'
+  meta_file = directory / 'meta.json'
   if not train_file.exists():
     raise ValueError(f"train.jsonl not found in {directory}")
   if not val_file.exists():
     raise ValueError(f"val.jsonl not found in {directory}")
+
+  pad_id = 0
+  vocab_override = None
+  if meta_file.exists():
+    with meta_file.open('r', encoding='utf-8') as f:
+      meta = json.load(f)
+      pad_id = int(meta.get('pad_id', 0))
+      vocab_override = meta.get('vocab_size')
 
   def read_file(path: Path):
     samples = []
@@ -93,10 +102,10 @@ def load_jsonl_dataset(directory: Path):
     raise ValueError(f'No training samples found in {train_file}')
   if not val_data:
     raise ValueError(f'No validation samples found in {val_file}')
-  return train_data, val_data
+  return train_data, val_data, pad_id, vocab_override
 
 
-def dataset_iterator(samples, batch_size: int, shuffle: bool) -> Iterator:
+def dataset_iterator(samples, batch_size: int, pad_id: int, shuffle: bool) -> Iterator:
   while True:
     if shuffle:
       random.shuffle(samples)
@@ -104,7 +113,7 @@ def dataset_iterator(samples, batch_size: int, shuffle: bool) -> Iterator:
       batch_samples = samples[start:start + batch_size]
       if not batch_samples:
         continue
-      yield pad_batch(list(batch_samples))
+      yield pad_batch(list(batch_samples), pad_id=pad_id)
 
 
 def list_step_checkpoints(directory: Path) -> List[Tuple[int, Path]]:
@@ -242,6 +251,34 @@ def main():
   if base_lr <= 0:
     raise ValueError('learning rate must be positive')
 
+  pad_id = 0
+  dataset_size = 0
+
+  if not args.dataset or args.dataset == 'synthetic':
+    tokenizer, dataset = build_synthetic_dataset(n=2000, seed=cfg.train.seed)
+    dataset_size = len(dataset)
+
+    def data_iter():
+      while True:
+        batch = [random.choice(dataset) for _ in range(effective_batch_size)]
+        yield pad_batch(batch)
+
+    iterator = data_iter()
+    val_iterator = data_iter()
+  else:
+    dataset_path = Path(args.dataset)
+    if not dataset_path.exists() or not dataset_path.is_dir():
+      raise ValueError('dataset must be "synthetic" or a directory containing train.jsonl/val.jsonl')
+    train_data, val_data, pad_id, vocab_override = load_jsonl_dataset(dataset_path)
+    if vocab_override is not None and int(vocab_override) > cfg.model.vocab_size:
+      cfg.model.vocab_size = int(vocab_override)
+    dataset_size = len(train_data)
+    if dataset_size == 0:
+      raise ValueError(f'No training samples found in {dataset_path}')
+    console.print(f'[grey70]Loaded {dataset_size} training samples from {dataset_path}[/grey70]')
+    iterator = dataset_iterator(train_data, effective_batch_size, pad_id=pad_id, shuffle=True)
+    val_iterator = dataset_iterator(val_data, effective_batch_size, pad_id=pad_id, shuffle=False)
+
   model = make_model(cfg).to(device)
   optimizer = make_optimizer(args.optimizer, model, cfg, base_lr)
 
@@ -269,26 +306,6 @@ def main():
   else:
     if args.save_best_model:
       raise ValueError('--save_best_model requires --run_name to place artifacts under runs/<run-name>/best-model/.')
-
-  if args.dataset == 'synthetic':
-    tokenizer, dataset = build_synthetic_dataset(n=2000, seed=cfg.train.seed)
-    dataset_size = len(dataset)
-
-    def data_iter():
-      while True:
-        batch = [random.choice(dataset) for _ in range(effective_batch_size)]
-        yield pad_batch(batch)
-
-    iterator = data_iter()
-    val_iterator = data_iter()
-  else:
-    dataset_path = Path(args.dataset) if args.dataset is not None else None
-    if dataset_path is None or not dataset_path.exists() or not dataset_path.is_dir():
-      raise ValueError('dataset must be "synthetic" or a directory containing train.jsonl/val.jsonl')
-    train_data, val_data = load_jsonl_dataset(dataset_path)
-    dataset_size = len(train_data)
-    iterator = dataset_iterator(train_data, effective_batch_size, shuffle=True)
-    val_iterator = dataset_iterator(val_data, effective_batch_size, shuffle=False)
 
   total_steps = args.steps if args.steps > 0 else 0
   if total_steps <= 0:
@@ -321,9 +338,9 @@ def main():
         scaler.load_state_dict(data['scaler'])
       best_loss = float(data.get('best_loss', float('inf')))
       start_step = int(data.get('step', resume_step))
-      console.print(f"[bold yellow]Resuming from {resume_path} (step {start_step})[/bold yellow]")
+      console.print(f'[bold yellow]Resuming from {resume_path} (step {start_step})[/bold yellow]')
       if start_step >= total_steps:
-        console.print(f"[bold green]All {total_steps} steps already completed; exiting.[/bold green]")
+        console.print(f'[bold green]All {total_steps} steps already completed; exiting.[/bold green]')
         return
 
   warmup_steps = max(0, args.warmup_steps)
@@ -366,10 +383,10 @@ def main():
     else:
       loss.backward()
 
-    grad_norm = gradient_norm(model)
-
     if args.grad_clip > 0:
       torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+
+    grad_norm = gradient_norm(model)
 
     if scaler is not None and scaler.is_enabled():
       scaler.step(optimizer)
@@ -424,7 +441,6 @@ def main():
   if save_dir is not None:
     final_payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, total_steps, best_loss, None, args.optimizer)
     torch.save(final_payload, save_dir / 'final.pt')
-
 
 if __name__ == '__main__':
   main()
