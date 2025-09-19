@@ -1,6 +1,7 @@
 Commit Summary:
-- add retry loop around forward/backward to recover from occasional CUDA launch timeouts (single retry with cache flush)
-- record change in llm.state per logging protocol
+- evaluate validation split by iterating all batches (list + streaming JSONLSplit) with averaged loss reporting
+- add helper iter_eval_batches and comprehensive console output; flush CUDA cache post-eval
+- document full-validation behavior in TRAINING.md and log updates in llm.state
 
 Testing / Validation:
 - PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py

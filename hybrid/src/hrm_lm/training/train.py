@@ -152,6 +152,32 @@ def dataset_iterator(samples, batch_size: int, pad_id: int, shuffle: bool) -> It
         yield pad_batch(list(batch_samples), pad_id=pad_id)
 
 
+def iter_eval_batches(samples, batch_size: int, pad_id: int):
+  if isinstance(samples, JSONLSplit):
+    offsets = samples.offsets
+    total = len(offsets)
+    with samples.path.open('rb') as handle:
+      for start in range(0, total, batch_size):
+        end = min(start + batch_size, total)
+        batch = []
+        for idx in range(start, end):
+          handle.seek(offsets[idx])
+          line = handle.readline()
+          parsed = _parse_json_line(line)
+          if parsed is None:
+            continue
+          batch.append(parsed)
+        if batch:
+          yield pad_batch(batch, pad_id=pad_id)
+  else:
+    total = len(samples)
+    for start in range(0, total, batch_size):
+      batch = samples[start:start + batch_size]
+      if not batch:
+        continue
+      yield pad_batch(list(batch), pad_id=pad_id)
+
+
 
 def _parse_json_line(line):
   if isinstance(line, bytes):  # Decode raw bytes when the caller streams from a binary file handle.
@@ -463,7 +489,6 @@ def main():
     mode_desc = 'streaming' if isinstance(train_data, JSONLSplit) else 'cached'  # Describe whether the dataset is streamed or fully cached.
     console.print(f'[grey70]Loaded {dataset_size:,} training samples from {dataset_path} ({mode_desc})[/grey70]')
     iterator = dataset_iterator(train_data, effective_batch_size, pad_id=pad_id, shuffle=True)
-    val_iterator = dataset_iterator(val_data, effective_eval_batch_size, pad_id=pad_id, shuffle=False)  # evaluation iterator uses dedicated batch size
 
     meta_path = dataset_path / 'meta.json'
     if meta_path.exists():
@@ -649,22 +674,28 @@ def main():
 
     if args.val_every > 0 and global_step % args.val_every == 0:
       model.eval()
-      with console.status(f'[grey58]eval step {global_step}/{total_steps}...[/grey58]', spinner='line'):
+      total_val_batches = math.ceil(len(val_data) / effective_eval_batch_size)
+      val_loss_sum = 0.0
+      val_batches = 0
+      status_text = f'[grey58]eval step {global_step}/{total_steps} ({total_val_batches} batches)...[/grey58]'
+      with console.status(status_text, spinner='line'):
         with torch.no_grad():
-          v_enc, v_dec_in, v_labels, v_enc_mask, v_dec_mask = next(val_iterator)
-          v_enc = truncate_to_max_length(v_enc, effective_seq_len).to(device)
-          v_dec_in = truncate_to_max_length(v_dec_in, effective_seq_len).to(device)
-          v_labels = truncate_to_max_length(v_labels, effective_seq_len).to(device)
-          v_enc_mask = truncate_to_max_length(v_enc_mask, effective_seq_len).to(device).bool()
-          v_dec_mask = truncate_to_max_length(v_dec_mask, effective_seq_len).to(device).bool()
-          v_out = model(v_enc, v_dec_in, enc_attn_mask=v_enc_mask, dec_attn_mask=v_dec_mask, labels=v_labels)
-          v_loss = float(v_out['loss'].item())
-        del v_enc, v_dec_in, v_labels, v_enc_mask, v_dec_mask, v_out
-        if torch.cuda.is_available():
-          torch.cuda.empty_cache()
-          torch.cuda.ipc_collect()
-      console.print(f'[orchid]eval:[/orchid] step {global_step}/{total_steps}, loss: {v_loss:.6f}')
+          for batch in iter_eval_batches(val_data, effective_eval_batch_size, pad_id):
+            v_enc, v_dec_in, v_labels, v_enc_mask, v_dec_mask = batch
+            v_enc = truncate_to_max_length(v_enc, effective_seq_len).to(device)
+            v_dec_in = truncate_to_max_length(v_dec_in, effective_seq_len).to(device)
+            v_labels = truncate_to_max_length(v_labels, effective_seq_len).to(device)
+            v_enc_mask = truncate_to_max_length(v_enc_mask, effective_seq_len).to(device).bool()
+            v_dec_mask = truncate_to_max_length(v_dec_mask, effective_seq_len).to(device).bool()
+            v_out = model(v_enc, v_dec_in, enc_attn_mask=v_enc_mask, dec_attn_mask=v_dec_mask, labels=v_labels)
+            val_loss_sum += float(v_out['loss'].item())
+            val_batches += 1
+      if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
       model.train()
+      v_loss = val_loss_sum / max(val_batches, 1)
+      console.print(f'[orchid]eval:[/orchid] step {global_step}/{total_steps}, loss: {v_loss:.6f} (batches: {val_batches})')
 
       if args.save_best_model and v_loss < best_loss:
         best_loss = v_loss

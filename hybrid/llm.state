@@ -308,6 +308,12 @@
 3. Document plan in statefile and share execution steps with user.
 
 ### Action Log
+- 2025-09-18T20:09Z: Documented full validation averaging in TRAINING.md.
+- 2025-09-18T20:08Z: Implemented full validation sweep over val.jsonl (iter_eval_batches) with average loss reporting.
+- 2025-09-18T20:05Z: Begin full validation overhaul (iterate complete val.jsonl rather than single batch).
+- 2025-09-18T19:58Z: Verified evaluation loop consumes a single validation batch per checkpoint (infinite iterator).
+- 2025-09-18T19:50Z: Planning dataset shuffle guidance for combined JSONL corpus.
+- 2025-09-18T19:40Z: Assessed plateau on RedPajama run (loss ~5, LR 2.7e-4, batch 16, seq 1024).
 - 2025-09-18T19:32Z: Added backward retry with CUDA cache flush to handle launch timeouts.
 - 2025-09-18T19:20Z: Guarded loss.item() with timeout handling; compileall succeeded.
 - 2025-09-18T19:08Z: Added GPU cache cleanup after validation to mitigate post-eval OOM.
@@ -335,6 +341,7 @@
 - 2025-09-18T17:14Z: Recorded new session and plan for merging batch outputs.
 
 ### Pending Steps
+- Draft revised LR/clipping schedule for RedPajama foundational run.
 - None; plan complete.
 
 ### Current Summary
