@@ -1,6 +1,6 @@
 Commit Summary:
-- ensure eval progress ETA uses full seconds precision for realistic estimates
-- log change in llm.state
+- log raw (pre-clip) gradient norm alongside clipped value for better diagnostics
+- record change in llm.state
 
 Testing / Validation:
 - PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py

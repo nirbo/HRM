@@ -617,7 +617,7 @@ def main():
     dec_mask = truncate_to_max_length(dec_mask, effective_seq_len).to(device).bool()
 
     attempt = 0
-    grad_norm = 0.0
+    raw_grad_norm = 0.0
     while True:
       optimizer.zero_grad(set_to_none=True)
       ctx = torch.autocast(**autocast_kwargs) if autocast_kwargs else contextlib.nullcontext()
@@ -631,8 +631,9 @@ def main():
         else:
           loss.backward()
         if args.grad_clip > 0:
-          torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
-        grad_norm = gradient_norm(model)
+          raw_grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+        else:
+          raw_grad_norm = gradient_norm(model)
         if scaler is not None and scaler.is_enabled():
           scaler.step(optimizer)
           scaler.update()
@@ -649,6 +650,8 @@ def main():
           attempt += 1
           continue
         raise
+
+    grad_norm = gradient_norm(model)
 
     steps_completed = global_step - run_start_step
     elapsed = time.time() - run_start_time
@@ -668,7 +671,7 @@ def main():
       parts = [
         f'[grey70]step {global_step}/{total_steps}[/grey70]',
         f'[chartreuse4]loss {loss_val:.15f}[/chartreuse4]',
-        f'[steel_blue]grad {grad_norm:.15f}[/steel_blue]',
+        f'[steel_blue]grad {grad_norm:.6f} (raw {raw_grad_norm:.6f})[/steel_blue]',
         f'[dark_orange3]lr {current_lr:.15f}[/dark_orange3]',
         f'[orchid]eta {eta}[/orchid]',
         f'[medium_spring_green]{speed}[/medium_spring_green]',
