@@ -714,7 +714,8 @@ def main():
             val_batches += 1
             elapsed_eval = time.time() - start_eval_time
             batches_left = total_val_batches - val_batches
-            eta_eval = format_eta((elapsed_eval / val_batches) * batches_left) if val_batches > 0 else '--h:--m'
+            eta_seconds = (elapsed_eval / val_batches) * batches_left if val_batches > 0 else float('inf')
+            eta_eval = format_eta(eta_seconds) if eta_seconds != float('inf') else '--h:--m'
             console.print(f'[grey50]  eval batch {val_batches}/{total_val_batches} (samples {processed_samples if val_sample_cap is None else min(processed_samples, val_sample_cap)}) eta {eta_eval}[/grey50]', soft_wrap=False, overflow='crop')
             if val_sample_cap is not None and processed_samples >= val_sample_cap:
               break

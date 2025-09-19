@@ -1,5 +1,5 @@
 Commit Summary:
-- show per-batch progress (count + ETA) during validation sweeps for better visibility
+- ensure eval progress ETA uses full seconds precision for realistic estimates
 - log change in llm.state
 
 Testing / Validation:
