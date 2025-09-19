@@ -1,6 +1,6 @@
 Commit Summary:
-- add --max_val_samples flag to bound validation sweep size; iter_eval_batches respects cap for streaming/list datasets
-- update TRAINING.md and llm.state to document validation limiting
+- show per-batch progress (count + ETA) during validation sweeps for better visibility
+- log change in llm.state
 
 Testing / Validation:
 - PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py

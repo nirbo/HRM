@@ -308,6 +308,9 @@
 3. Document plan in statefile and share execution steps with user.
 
 ### Action Log
+- 2025-09-18T20:27Z: Documented eval progress visibility in TRAINING.md.
+- 2025-09-18T20:26Z: Added per-batch eval progress updates with ETA.
+- 2025-09-18T20:22Z: Enhancing eval progress display (batch counters & ETA).
 - 2025-09-18T20:15Z: Added --max_val_samples flag and capped validation averaging (documented in TRAINING.md).
 - 2025-09-18T20:09Z: Documented full validation averaging in TRAINING.md.
 - 2025-09-18T20:08Z: Implemented full validation sweep over val.jsonl (iter_eval_batches) with average loss reporting.
@@ -342,11 +345,12 @@
 - 2025-09-18T17:14Z: Recorded new session and plan for merging batch outputs.
 
 ### Pending Steps
+- None; plan complete.
 - Draft revised LR/clipping schedule for RedPajama foundational run.
 - None; plan complete.
 
 ### Current Summary
-- Streaming loader now indexes large JSONL corpora on disk, preventing OOM while retaining heartbeat visibility and optional multiprocessing for smaller caches.
+- Streaming loader indexes large JSONL corpora; validation sweeps averaged over full val split (or capped via --max_val_samples) with per-batch progress.
 
 ### Open Issues
 - Bulk batch outputs consume significant disk space (≈100 GB).

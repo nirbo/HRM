@@ -686,8 +686,9 @@ def main():
       processed_samples = 0
       status_text = f'[grey58]eval step {global_step}/{total_steps} ({total_val_batches} batches)...[/grey58]'
       with console.status(status_text, spinner='line'):
+        start_eval_time = time.time()
         with torch.no_grad():
-          for batch in iter_eval_batches(val_data, effective_eval_batch_size, pad_id):
+          for batch_idx, batch in enumerate(iter_eval_batches(val_data, effective_eval_batch_size, pad_id), start=1):
             v_enc, v_dec_in, v_labels, v_enc_mask, v_dec_mask = batch
             batch_size = v_enc.size(0)
             processed_samples += batch_size
@@ -711,6 +712,10 @@ def main():
             v_out = model(v_enc, v_dec_in, enc_attn_mask=v_enc_mask, dec_attn_mask=v_dec_mask, labels=v_labels)
             val_loss_sum += float(v_out['loss'].item())
             val_batches += 1
+            elapsed_eval = time.time() - start_eval_time
+            batches_left = total_val_batches - val_batches
+            eta_eval = format_eta((elapsed_eval / val_batches) * batches_left) if val_batches > 0 else '--h:--m'
+            console.print(f'[grey50]  eval batch {val_batches}/{total_val_batches} (samples {processed_samples if val_sample_cap is None else min(processed_samples, val_sample_cap)}) eta {eta_eval}[/grey50]', soft_wrap=False, overflow='crop')
             if val_sample_cap is not None and processed_samples >= val_sample_cap:
               break
       if torch.cuda.is_available():
