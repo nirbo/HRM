@@ -386,9 +386,16 @@ def gradient_norm(model: nn.Module) -> float:
 def format_eta(seconds: float) -> str:
   if math.isinf(seconds) or seconds <= 0:
     return '--h:--m'
-  minutes, _ = divmod(int(seconds + 0.5), 60)
-  hours, minutes = divmod(minutes, 60)
-  return f"{hours:02d}h:{minutes:02d}m"
+  if seconds >= 3600:
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    return f"{hours:02d}h:{minutes:02d}m"
+  if seconds >= 60:
+    minutes = int(seconds // 60)
+    secs = int(seconds % 60)
+    return f"{minutes:02d}m:{secs:02d}s"
+  secs = int(seconds + 0.5)
+  return f"00m:{secs:02d}s"
 
 
 def format_speed(seconds_per_it: float) -> str:

@@ -308,6 +308,7 @@
 3. Document plan in statefile and share execution steps with user.
 
 ### Action Log
+- 2025-09-18T20:55Z: Improving format_eta to include seconds for fast eval batches.
 - 2025-09-18T20:45Z: Logged raw (pre-clip) gradient norms alongside clipped value.
 - 2025-09-18T20:35Z: Updated eval ETA to include seconds precision.
 - 2025-09-18T20:27Z: Documented eval progress visibility in TRAINING.md.

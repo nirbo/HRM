@@ -1,5 +1,5 @@
 Commit Summary:
-- log raw (pre-clip) gradient norm alongside clipped value for better diagnostics
+- refine format_eta to display mm:ss for short durations (eval batches now show accurate ETAs)
 - record change in llm.state
 
 Testing / Validation:
