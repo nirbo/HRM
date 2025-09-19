@@ -431,12 +431,14 @@ def main():
   parser.add_argument('--log_steps', type=int, default=10)
   parser.add_argument('--dataset_workers', type=int, default=0, help='Number of worker processes for JSONL loading (0 = single process).')  # Allow callers to opt into multiprocessing during dataset ingest.
   parser.add_argument('--reset_progress', action='store_true', help='Load weights from the latest checkpoint but restart optimizer state and step counter.')  # Enable fresh runs seeded from existing checkpoints.
+  parser.add_argument('--max_val_samples', type=int, default=0, help='Limit the number of validation samples evaluated per checkpoint (0 = use all).')  # Allow partial validation sweeps for speed.
   args = parser.parse_args()
 
   cfg = OmegaConf.load(args.config) if args.config else OmegaConf.load(Path(__file__).parent.parent / 'configs' / 'default.yaml')
   requested_workers = args.dataset_workers if args.dataset_workers and args.dataset_workers > 0 else 1  # Capture the requested worker count, defaulting to one process.
   cpu_cap = mp.cpu_count() or 1  # Discover the local CPU capacity to prevent oversubscription.
   dataset_workers = max(1, min(requested_workers, cpu_cap))  # Clamp worker usage within the valid CPU range.
+  max_val_samples = args.max_val_samples if args.max_val_samples and args.max_val_samples > 0 else None  # Optional cap on validation samples.
   set_seed(cfg.train.seed)
 
   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -482,6 +484,7 @@ def main():
     if not dataset_path.exists() or not dataset_path.is_dir():
       raise ValueError('dataset must be "synthetic" or a directory containing train.jsonl/val.jsonl')
     train_data, val_data, pad_id, vocab_override, tokenizer_path, dataset_size = load_jsonl_dataset(dataset_path, workers=dataset_workers)  # Load dataset splits using the configured worker pool.
+    val_sample_cap = max_val_samples
     if vocab_override is not None and int(vocab_override) > cfg.model.vocab_size:
       cfg.model.vocab_size = int(vocab_override)
     if dataset_size == 0:
@@ -674,14 +677,32 @@ def main():
 
     if args.val_every > 0 and global_step % args.val_every == 0:
       model.eval()
-      total_val_batches = math.ceil(len(val_data) / effective_eval_batch_size)
+      total_samples = len(val_data)
+      if val_sample_cap is not None:
+        total_samples = min(total_samples, val_sample_cap)
+      total_val_batches = math.ceil(total_samples / effective_eval_batch_size)
       val_loss_sum = 0.0
       val_batches = 0
+      processed_samples = 0
       status_text = f'[grey58]eval step {global_step}/{total_steps} ({total_val_batches} batches)...[/grey58]'
       with console.status(status_text, spinner='line'):
         with torch.no_grad():
           for batch in iter_eval_batches(val_data, effective_eval_batch_size, pad_id):
             v_enc, v_dec_in, v_labels, v_enc_mask, v_dec_mask = batch
+            batch_size = v_enc.size(0)
+            processed_samples += batch_size
+            if val_sample_cap is not None and processed_samples > val_sample_cap:
+              overflow = processed_samples - val_sample_cap
+              keep = batch_size - overflow
+              if keep <= 0:
+                break
+              v_enc = v_enc[:keep]
+              v_dec_in = v_dec_in[:keep]
+              v_labels = v_labels[:keep]
+              v_enc_mask = v_enc_mask[:keep]
+              v_dec_mask = v_dec_mask[:keep]
+              batch_size = keep
+              processed_samples = val_sample_cap
             v_enc = truncate_to_max_length(v_enc, effective_seq_len).to(device)
             v_dec_in = truncate_to_max_length(v_dec_in, effective_seq_len).to(device)
             v_labels = truncate_to_max_length(v_labels, effective_seq_len).to(device)
@@ -690,12 +711,17 @@ def main():
             v_out = model(v_enc, v_dec_in, enc_attn_mask=v_enc_mask, dec_attn_mask=v_dec_mask, labels=v_labels)
             val_loss_sum += float(v_out['loss'].item())
             val_batches += 1
+            if val_sample_cap is not None and processed_samples >= val_sample_cap:
+              break
       if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.ipc_collect()
       model.train()
       v_loss = val_loss_sum / max(val_batches, 1)
-      console.print(f'[orchid]eval:[/orchid] step {global_step}/{total_steps}, loss: {v_loss:.6f} (batches: {val_batches})')
+      if val_sample_cap is not None:
+        console.print(f'[orchid]eval:[/orchid] step {global_step}/{total_steps}, loss: {v_loss:.6f} (batches: {val_batches}, samples: {min(total_samples, val_sample_cap)})')
+      else:
+        console.print(f'[orchid]eval:[/orchid] step {global_step}/{total_steps}, loss: {v_loss:.6f} (batches: {val_batches})')
 
       if args.save_best_model and v_loss < best_loss:
         best_loss = v_loss

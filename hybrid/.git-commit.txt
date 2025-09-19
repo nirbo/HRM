@@ -1,7 +1,6 @@
 Commit Summary:
-- evaluate validation split by iterating all batches (list + streaming JSONLSplit) with averaged loss reporting
-- add helper iter_eval_batches and comprehensive console output; flush CUDA cache post-eval
-- document full-validation behavior in TRAINING.md and log updates in llm.state
+- add --max_val_samples flag to bound validation sweep size; iter_eval_batches respects cap for streaming/list datasets
+- update TRAINING.md and llm.state to document validation limiting
 
 Testing / Validation:
 - PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py

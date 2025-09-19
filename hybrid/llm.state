@@ -308,6 +308,7 @@
 3. Document plan in statefile and share execution steps with user.
 
 ### Action Log
+- 2025-09-18T20:15Z: Added --max_val_samples flag and capped validation averaging (documented in TRAINING.md).
 - 2025-09-18T20:09Z: Documented full validation averaging in TRAINING.md.
 - 2025-09-18T20:08Z: Implemented full validation sweep over val.jsonl (iter_eval_batches) with average loss reporting.
 - 2025-09-18T20:05Z: Begin full validation overhaul (iterate complete val.jsonl rather than single batch).

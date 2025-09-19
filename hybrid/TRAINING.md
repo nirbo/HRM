@@ -144,7 +144,7 @@ Additional notes:
 - `final.pt` always reflects the last completed step, regardless of the checkpoint limit.
 - Dataset loading now reports progress heartbeats (every ~200k samples) and can be parallelized with `--dataset_workers` for faster ingest on large corpora.
 - Extremely large corpora automatically stream from disk using offset indexes to avoid exhausting RAM (worker processes apply only when caching).
-- Validation runs over the entire `val.jsonl`, averaging loss across all batches for accurate metrics.
+- Validation runs over the entire `val.jsonl`, averaging loss across all batches for accurate metrics (override with `--max_val_samples`).
 
 ## Useful Shortcuts
 
