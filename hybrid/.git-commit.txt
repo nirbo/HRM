@@ -1,6 +1,6 @@
 Commit Summary:
-- protect training log against CUDA launch timeouts by guarding loss.item() and synchronizing on failure
-- document change in llm.state per instructions
+- add retry loop around forward/backward to recover from occasional CUDA launch timeouts (single retry with cache flush)
+- record change in llm.state per logging protocol
 
 Testing / Validation:
 - PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py

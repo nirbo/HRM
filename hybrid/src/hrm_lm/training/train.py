@@ -588,28 +588,39 @@ def main():
     enc_mask = truncate_to_max_length(enc_mask, effective_seq_len).to(device).bool()
     dec_mask = truncate_to_max_length(dec_mask, effective_seq_len).to(device).bool()
 
-    optimizer.zero_grad(set_to_none=True)
-    ctx = torch.autocast(**autocast_kwargs) if autocast_kwargs else contextlib.nullcontext()
-    with ctx:
-      out = model(enc, dec_in, enc_attn_mask=enc_mask, dec_attn_mask=dec_mask, labels=labels)
-      loss = out['loss']
-
-    if scaler is not None and scaler.is_enabled():
-      scaler.scale(loss).backward()
-      scaler.unscale_(optimizer)
-    else:
-      loss.backward()
-
-    if args.grad_clip > 0:
-      torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
-
-    grad_norm = gradient_norm(model)
-
-    if scaler is not None and scaler.is_enabled():
-      scaler.step(optimizer)
-      scaler.update()
-    else:
-      optimizer.step()
+    attempt = 0
+    grad_norm = 0.0
+    while True:
+      optimizer.zero_grad(set_to_none=True)
+      ctx = torch.autocast(**autocast_kwargs) if autocast_kwargs else contextlib.nullcontext()
+      try:
+        with ctx:
+          out = model(enc, dec_in, enc_attn_mask=enc_mask, dec_attn_mask=dec_mask, labels=labels)
+          loss = out['loss']
+        if scaler is not None and scaler.is_enabled():
+          scaler.scale(loss).backward()
+          scaler.unscale_(optimizer)
+        else:
+          loss.backward()
+        if args.grad_clip > 0:
+          torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+        grad_norm = gradient_norm(model)
+        if scaler is not None and scaler.is_enabled():
+          scaler.step(optimizer)
+          scaler.update()
+        else:
+          optimizer.step()
+        break
+      except RuntimeError as exc:
+        message = str(exc).lower()
+        if ('launch timed out' in message or 'device-side assert' in message) and attempt < 1:
+          console.print('[bold red]CUDA timeout detected; retrying current step after cache flush.[/bold red]')
+          if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+          attempt += 1
+          continue
+        raise
 
     steps_completed = global_step - run_start_step
     elapsed = time.time() - run_start_time
