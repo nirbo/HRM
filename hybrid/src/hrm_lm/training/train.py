@@ -659,8 +659,13 @@ def main():
         if ('launch timed out' in message or 'device-side assert' in message) and attempt < 1:
           console.print('[bold red]CUDA timeout detected; retrying current step after cache flush.[/bold red]')
           if torch.cuda.is_available():
-            torch.cuda.synchronize()
+            try:
+              torch.cuda.synchronize()
+            except Exception as sync_err:
+              console.print(f'[bold yellow]CUDA synchronize failed after timeout: {sync_err}; proceeding with retry without full sync.[/bold yellow]')
             torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+          time.sleep(1.0)
           attempt += 1
           continue
         elif 'cublas' in message and attempt < 1:

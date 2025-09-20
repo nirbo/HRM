@@ -557,7 +557,11 @@
 - 2025-09-20T00:15Z: Removed leftover split-train chunk files after aggregation.
 - 2025-09-20T00:20Z: Patched trainer eval loop to reuse autocast context around model forward.
 - 2025-09-20T00:21Z: Documented eval autocast reuse in TRAINING.md notes.
-
+- 2025-09-20T00:22Z: Committed autocast validation fix (`git commit -m "Use autocast during validation to avoid OOM"`).
+- 2025-09-20T00:22Z: Pushed commit to origin/hybrid via git push.
+- 2025-09-20T15:12Z: Fetched PyTorch float8 FSDP2 blog, Medium FP8 article, TorchAO README, float8 rowwise blog, Axolotl mixed precision docs, FP8-LM paper, Reddit FP8 discussion, and NVIDIA FP8 intro using custom parser for analysis.
+- 2025-09-20T15:28Z: Authored FP8.md summarizing research findings and feasibility guidance.
+- 2025-09-20T15:36Z: Updated CUDA timeout retry logic (safe synchronize handling, cache flush, pause) and documented behaviour.\n
 ### Pending Steps
 - Step 3: Diagnose inference quality and recommend next steps.
 
@@ -565,6 +569,32 @@
 - Best-model directory contains config/tokenizer/meta artifacts; saved snapshot predates visible gradient explosion but still yields incoherent generations.
 - No persisted training logs available under run directory, so gradient spike context must rely on console history.
 - Trainer code (`src/hrm_lm/training/train.py:744-762`) proves best-model saving strictly depends on eval loss improvements; issue likely stems from validation metric not reflecting downstream coherence.
+
+### Open Issues
+- None yet.
+
+### Task Completion Summary
+- Pending task execution.
+
+## Session 2025-09-20T15:08Z
+### Original Task Description
+- Research FP8 training feasibility as of September 20, 2025 using provided resources and PyTorch 2.8.0+ docs; produce detailed summary in FP8.md.
+
+### Plan
+1. Collect and review each referenced article/documentation source, noting key FP8 support details.
+2. Cross-reference current PyTorch 2.8+ documentation for native FP8 workflows (FSDP, AO, etc.).
+3. Synthesize findings into FP8.md covering feasibility for our use case.
+
+### Action Log
+- 2025-09-20T15:08Z: Initialized FP8 research session and plan.
+
+### Pending Steps
+- Step 1: Gather and review provided resources.
+- Step 2: Cross-reference PyTorch docs for FP8 workflows.
+- Step 3: Write FP8.md summary.
+
+### Current Summary
+- Research session initialized.
 
 ### Open Issues
 - None yet.

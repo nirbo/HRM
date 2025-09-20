@@ -1,9 +1,9 @@
-Handle eval OOM via autocast and document
+Improve CUDA timeout recovery
 
 Summary:
-- reuse the training autocast context during validation forwards so bf16/fp16 runs avoid fp32 cross-entropy buffers that triggered CUDA OOMs
-- document the behavior in TRAINING.md notes for future operators
-- log all actions in llm.state (dataset filtering, autocast patch, documentation updates)
+- wrap the retry path for CUDA timeouts in a guarded synchronize/empty_cache/ipc_collect with a short pause so we can retry even if the first sync call fails
+- log the fallback behaviour and mention the enhanced timeout handling in TRAINING.md
+- capture the statefile update noting the new timeout recovery logic
 
 Files touched:
 - src/hrm_lm/training/train.py
