@@ -146,6 +146,7 @@ Additional notes:
 - Dataset loading now reports progress heartbeats (every ~200k samples) and can be parallelized with `--dataset_workers` for faster ingest on large corpora.
 - Extremely large corpora automatically stream from disk using offset indexes to avoid exhausting RAM (worker processes apply only when caching).
 - Validation runs over the entire `val.jsonl`, averaging loss across all batches for accurate metrics (override with `--max_val_samples`).
+- Validation loops now reuse the active mixed-precision autocast context, so bf16/fp16 runs no longer inflate memory during evaluation sweeps.
 - `--eval_loss_patience` provides an automatic safety stop when validation loss rises repeatedly; lower values trigger earlier restarts and `0` keeps training regardless of the trend.
 
 ## Useful Shortcuts

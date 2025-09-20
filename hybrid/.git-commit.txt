@@ -1,9 +1,9 @@
-Implement eval-loss early stopping safeguard and docs
+Handle eval OOM via autocast and document
 
 Summary:
-- add --eval_loss_patience CLI argument (default 3) in trainer and wire state tracking that breaks training after configurable consecutive validation-loss increases with a clear console message
-- document the new safeguard in TRAINING.md (CLI table + notes) so operators know how to tune or disable it
-- ensure llm.state captures the changes plus removal of stray tokenizer artifact
+- reuse the training autocast context during validation forwards so bf16/fp16 runs avoid fp32 cross-entropy buffers that triggered CUDA OOMs
+- document the behavior in TRAINING.md notes for future operators
+- log all actions in llm.state (dataset filtering, autocast patch, documentation updates)
 
 Files touched:
 - src/hrm_lm/training/train.py

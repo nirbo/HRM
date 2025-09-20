@@ -712,6 +712,7 @@ def main():
       status_text = f'[grey58]eval step {global_step}/{total_steps} ({total_val_batches} batches)...[/grey58]'
       with console.status(status_text, spinner='line'):
         start_eval_time = time.time()
+        eval_ctx_factory = (lambda: torch.autocast(**autocast_kwargs)) if autocast_kwargs else (lambda: contextlib.nullcontext())
         with torch.no_grad():
           for batch_idx, batch in enumerate(iter_eval_batches(val_data, effective_eval_batch_size, pad_id), start=1):
             v_enc, v_dec_in, v_labels, v_enc_mask, v_dec_mask = batch
@@ -734,7 +735,8 @@ def main():
             v_labels = truncate_to_max_length(v_labels, effective_seq_len).to(device)
             v_enc_mask = truncate_to_max_length(v_enc_mask, effective_seq_len).to(device).bool()
             v_dec_mask = truncate_to_max_length(v_dec_mask, effective_seq_len).to(device).bool()
-            v_out = model(v_enc, v_dec_in, enc_attn_mask=v_enc_mask, dec_attn_mask=v_dec_mask, labels=v_labels)
+            with eval_ctx_factory():
+              v_out = model(v_enc, v_dec_in, enc_attn_mask=v_enc_mask, dec_attn_mask=v_dec_mask, labels=v_labels)
             val_loss_sum += float(v_out['loss'].item())
             val_batches += 1
             elapsed_eval = time.time() - start_eval_time

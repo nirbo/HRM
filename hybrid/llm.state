@@ -545,6 +545,18 @@
 - 2025-09-19T23:50Z: Documented --eval_loss_patience flag and behavior in TRAINING.md table and notes; command succeeded.
 - 2025-09-19T23:50Z: Removed stray tokenizer.json artifact before commit; command succeeded.
 - 2025-09-19T23:51Z: Authored .git-commit.txt summarizing early-stop safeguard changes; command succeeded.
+- 2025-09-19T23:51Z: Attempted `git add -F .git-commit.txt`; command failed (unknown switch).
+- 2025-09-19T23:52Z: Forced-added .git-commit.txt using git add -f; command succeeded.
+- 2025-09-19T23:52Z: Committed early-stop safeguard and docs (`git commit -m "Add eval loss patience early stop"`).
+- 2025-09-19T23:52Z: Pushed commit to origin/hybrid via git push; command succeeded.
+- 2025-09-20T00:01Z: Attempted to split train.jsonl into 8 parts; aborted due to disk space, partial files cleaned up.
+- 2025-09-20T00:05Z: Added scripts/filter_jsonl.py helper for streaming length filtering.
+- 2025-09-20T00:06Z: Rewrote filter_jsonl.py to support stdin for parallel processing.
+- 2025-09-20T00:09Z: Extended filter_jsonl.py with multiprocessing worker/chunk support.
+- 2025-09-20T00:12Z: Filtered train/val JSONL to <=510 tokens with 16/8 workers and refreshed metadata.
+- 2025-09-20T00:15Z: Removed leftover split-train chunk files after aggregation.
+- 2025-09-20T00:20Z: Patched trainer eval loop to reuse autocast context around model forward.
+- 2025-09-20T00:21Z: Documented eval autocast reuse in TRAINING.md notes.
 
 ### Pending Steps
 - Step 3: Diagnose inference quality and recommend next steps.
