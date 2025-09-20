@@ -40,6 +40,32 @@ PYTHONPATH=src python scripts/merge_prepared_batches.py \
 
 This command streams each chunk’s `train.jsonl`/`val.jsonl` into consolidated files, writes an aggregated `meta.json`, and deletes chunk directories by default (pass `--keep-chunks` to retain them).
 
+Large raw text dumps (for example Wikipedia) can be chunked locally before feeding the standard converter:
+
+```bash
+# Slice long articles into 1k-token windows with 64-token overlap using all CPU cores
+python scripts/chunk_text_dataset.py \
+  --input datasets/debasishraychawdhuri-wikipedia_clean_5GB/clean_wikipedia_for_autocorrect.txt \
+  --output datasets/wiki_chunks/wiki_1024.jsonl \
+  --tokenizer tokenizer.json \
+  --target-length 1024 \
+  --stride 64 \
+  --batch-size 256 \
+  --num-proc 30
+
+# Convert the chunked JSONL into encoder/decoder triples for training
+python scripts/prepare_language_dataset.py \
+  --source datasets/wiki_chunks \
+  --dest datasets/wiki_chunks/processed \
+  --tokenizer datasets/wiki_chunks/processed/tokenizer.json \
+  --tokenizer-num-threads 16 \
+  --tokenizer-batch-size 256 \
+  --max-seq-len 1024 \
+  --val-ratio 0.02
+```
+
+`chunk_text_dataset.py` accepts both hub identifiers and local tokenizer files. Point `--tokenizer` at an existing `tokenizer.json` to keep vocabulary consistent while trimming articles down to GPU-friendly sequence lengths.
+
 For QA-style sources (SQuAD, TriviaQA, etc.), normalize schemas first:
 ```bash
 python scripts/normalize_qa_dataset.py \

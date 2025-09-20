@@ -561,7 +561,7 @@
 - 2025-09-20T00:22Z: Pushed commit to origin/hybrid via git push.
 - 2025-09-20T15:12Z: Fetched PyTorch float8 FSDP2 blog, Medium FP8 article, TorchAO README, float8 rowwise blog, Axolotl mixed precision docs, FP8-LM paper, Reddit FP8 discussion, and NVIDIA FP8 intro using custom parser for analysis.
 - 2025-09-20T15:28Z: Authored FP8.md summarizing research findings and feasibility guidance.
-- 2025-09-20T15:36Z: Updated CUDA timeout retry logic (safe synchronize handling, cache flush, pause) and documented behaviour.\n
+- 2025-09-20T15:36Z: Updated CUDA timeout retry logic (safe synchronize handling, cache flush, pause) and documented behaviour.\n- 2025-09-20T15:37Z: Committed CUDA timeout fix (`git commit -m "Improve CUDA timeout recovery"`).\n- 2025-09-20T15:37Z: Pushed commit to origin/hybrid via git push.\n- 2025-09-20T15:44Z: Updated chunk_text_dataset.py to accept local tokenizer files.\n- 2025-09-20T15:44Z: Documented chunking workflow and commands in TRAINING.md.\n
 ### Pending Steps
 - Step 3: Diagnose inference quality and recommend next steps.
 
