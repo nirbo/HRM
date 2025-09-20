@@ -1,6 +1,11 @@
-Commit Summary:
-- refine format_eta to display mm:ss for short durations (eval batches now show accurate ETAs)
-- record change in llm.state
+Implement eval-loss early stopping safeguard and docs
 
-Testing / Validation:
-- PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py
+Summary:
+- add --eval_loss_patience CLI argument (default 3) in trainer and wire state tracking that breaks training after configurable consecutive validation-loss increases with a clear console message
+- document the new safeguard in TRAINING.md (CLI table + notes) so operators know how to tune or disable it
+- ensure llm.state captures the changes plus removal of stray tokenizer artifact
+
+Files touched:
+- src/hrm_lm/training/train.py
+- TRAINING.md
+- llm.state

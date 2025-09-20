@@ -428,6 +428,7 @@ def main():
   parser.add_argument('--steps', type=int, default=0)
   parser.add_argument('--epochs', type=int, default=0)
   parser.add_argument('--val_every', type=int, default=0)
+  parser.add_argument('--eval_loss_patience', type=int, default=3, help='Stop training after this many consecutive eval loss increases (0 disables).')  # Early-stop safeguard for rising validation loss.
   parser.add_argument('--save_dir', default=None)
   parser.add_argument('--mixed_precision', default='none')
   parser.add_argument('--grad_clip', type=float, default=0.0)
@@ -446,6 +447,7 @@ def main():
   cpu_cap = mp.cpu_count() or 1  # Discover the local CPU capacity to prevent oversubscription.
   dataset_workers = max(1, min(requested_workers, cpu_cap))  # Clamp worker usage within the valid CPU range.
   max_val_samples = args.max_val_samples if args.max_val_samples and args.max_val_samples > 0 else None  # Optional cap on validation samples.
+  eval_loss_patience = args.eval_loss_patience if args.eval_loss_patience and args.eval_loss_patience > 0 else 0  # Number of consecutive eval-loss increases tolerated before stopping.
   set_seed(cfg.train.seed)
 
   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -474,6 +476,7 @@ def main():
   pad_id = 0
   dataset_size = 0
   artifact_sources: List[Tuple[Path, str]] = []
+  val_sample_cap = max_val_samples  # Default validation sample cap shared across dataset modes.
 
   if not args.dataset or args.dataset == 'synthetic':
     tokenizer, dataset = build_synthetic_dataset(n=2000, seed=cfg.train.seed)
@@ -612,6 +615,10 @@ def main():
   def truncate_to_max_length(tensor: torch.Tensor, length: int) -> torch.Tensor:
     return tensor[:, :length] if tensor.size(1) > length else tensor
 
+  consecutive_eval_increase = 0  # Count consecutive times validation loss increases.
+  last_eval_loss: Optional[float] = None  # Remember the previous validation loss for comparison.
+  early_stop_triggered = False  # Flag to break out of training when patience is exhausted.
+
   for step in range(start_step, total_steps):
     global_step = step + 1
     current_lr = adjust_lr(global_step)
@@ -654,6 +661,14 @@ def main():
           if torch.cuda.is_available():
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
+          attempt += 1
+          continue
+        elif 'cublas' in message and attempt < 1:
+          console.print('[bold red]cuBLAS error detected; retrying current step after cache flush.[/bold red]')  # surface cuBLAS faults before retry
+          if torch.cuda.is_available():
+            torch.cuda.synchronize()  # drain outstanding kernels so cuBLAS can recover
+            torch.cuda.empty_cache()  # release allocator caches that may confuse cuBLAS
+          time.sleep(1.0)  # small pause gives driver time to settle
           attempt += 1
           continue
         raise
@@ -758,6 +773,19 @@ def main():
         write_config(ckpt_dir / 'config.yaml', cfg_serializable)
         ensure_checkpoint_artifacts(ckpt_dir, artifact_sources)
         enforce_checkpoint_limit(save_dir, args.checkpoint_limit)
+
+      if eval_loss_patience > 0:  # Engage early-stop tracking only when patience is positive.
+        if last_eval_loss is not None and v_loss > last_eval_loss:  # Detect validation loss increase relative to previous checkpoint.
+          consecutive_eval_increase += 1  # Increment the streak when loss worsens.
+        else:  # Otherwise the streak resets because loss improved or first measurement.
+          consecutive_eval_increase = 0  # Reset consecutive increase counter.
+        last_eval_loss = v_loss  # Persist current validation loss for the next comparison.
+        if consecutive_eval_increase >= eval_loss_patience:  # Check whether patience has been exhausted.
+          console.print(f"[bold red]Early stopping: validation loss increased for {eval_loss_patience} consecutive evals at step {global_step}. Halting training.[/bold red]")  # Emit clear shutdown message.
+          early_stop_triggered = True  # Signal the outer loop to terminate.
+
+    if early_stop_triggered:  # Break out of the training loop when early stop fires.
+      break  # Exit the main step loop immediately.
 
   if save_dir is not None:
     final_payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, total_steps, best_loss, None, args.optimizer)

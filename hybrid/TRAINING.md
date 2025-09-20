@@ -128,6 +128,7 @@ To add a custom dataset:
 | `--steps` | config value | Total optimization steps; overrides `--epochs` when >0. |
 | `--epochs` | `0` | Number of epochs (computed from dataset size) when `--steps` ≤ 0. |
 | `--val_every` | `0` | Validation/checkpoint frequency in steps (disabled when `0`). |
+| `--eval_loss_patience` | `3` | Stop training after this many consecutive validation loss increases (`0` disables early stop). |
 | `--save_dir` | `None` | Legacy manual checkpoint directory (overridden by `--run_name`). |
 | `--run_name` | `None` | Creates `runs/<run-name>/checkpoints/` (required for `--save_best_model`). |
 | `--checkpoint_limit` | `0` | Maximum number of `step_*.pt` checkpoints to retain (FIFO). `0` disables rotation. |
@@ -145,6 +146,7 @@ Additional notes:
 - Dataset loading now reports progress heartbeats (every ~200k samples) and can be parallelized with `--dataset_workers` for faster ingest on large corpora.
 - Extremely large corpora automatically stream from disk using offset indexes to avoid exhausting RAM (worker processes apply only when caching).
 - Validation runs over the entire `val.jsonl`, averaging loss across all batches for accurate metrics (override with `--max_val_samples`).
+- `--eval_loss_patience` provides an automatic safety stop when validation loss rises repeatedly; lower values trigger earlier restarts and `0` keeps training regardless of the trend.
 
 ## Useful Shortcuts
 
