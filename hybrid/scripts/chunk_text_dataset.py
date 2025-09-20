@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List
 
 from datasets import load_dataset
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 
 def build_argparser() -> argparse.ArgumentParser:
@@ -36,16 +36,18 @@ def main() -> None:
     if tokenizer_path.is_dir():
       tokenizer = AutoTokenizer.from_pretrained(str(tokenizer_path), use_fast=True)
     else:
-      parent_dir = tokenizer_path.parent if tokenizer_path.parent.exists() else Path('.')
-      tokenizer = AutoTokenizer.from_pretrained(
-        str(parent_dir),
-        tokenizer_file=str(tokenizer_path),
-        use_fast=True,
-      )
+      tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(tokenizer_path))
   else:
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_arg, use_fast=True)
+  if tokenizer.eos_token is None and '<eos>' in tokenizer.get_vocab():
+    tokenizer.eos_token = '<eos>'
+  if tokenizer.bos_token is None and '<bos>' in tokenizer.get_vocab():
+    tokenizer.bos_token = '<bos>'
   if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token
+    if '<pad>' in tokenizer.get_vocab():
+      tokenizer.pad_token = '<pad>'
+    else:
+      tokenizer.pad_token = tokenizer.eos_token
 
   dataset = load_dataset('text', data_files=str(args.input))['train']
 

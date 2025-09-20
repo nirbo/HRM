@@ -1,11 +1,10 @@
-Improve CUDA timeout recovery
+Handle local tokenizer files in chunker
 
 Summary:
-- wrap the retry path for CUDA timeouts in a guarded synchronize/empty_cache/ipc_collect with a short pause so we can retry even if the first sync call fails
-- log the fallback behaviour and mention the enhanced timeout handling in TRAINING.md
-- capture the statefile update noting the new timeout recovery logic
+- load standalone tokenizer.json via PreTrainedTokenizerFast so chunk_text_dataset.py works without a config directory
+- set fallback <bos>/<eos>/<pad> tokens when missing
+- log the update in llm.state
 
 Files touched:
-- src/hrm_lm/training/train.py
-- TRAINING.md
+- scripts/chunk_text_dataset.py
 - llm.state
