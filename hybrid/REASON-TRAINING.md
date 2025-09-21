@@ -99,11 +99,12 @@ python scripts/merge_prepared_batches.py \
     datasets/reasoning/gsm8k/processed \
     datasets/reasoning/mbpp/processed \
   --weights 0.90 0.05 0.05 \
-  --dest datasets/hybrid_mix_stageB \
-  --val-ratio 0.001
+  --output datasets/hybrid_mix_stageB \
+  --train-samples 5000000 \
+  --val-samples 20000
 ```
 
-   - (Optional) Add `datasets/reasoning/scienceqa/processed` to the `--sources` list with an adjusted weight if you want rationales in Stage B.
+   - (Optional) Append `datasets/reasoning/scienceqa/processed` to `--sources` with an adjusted weight (e.g., `0.90 0.05 0.03 0.02`) to include rationale-heavy examples.
 
    - The script streams each source split and writes a combined `train.jsonl`, `val.jsonl`, and `meta.json`; adjust weights as needed.
 

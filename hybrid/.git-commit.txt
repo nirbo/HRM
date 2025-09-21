@@ -1,5 +1,5 @@
-Document gated HRM warmup and add reasoning dataset builder
+Add dataset mixing mode for Stage B merge workflow
 
-- add scripts/build_reasoning_dataset.py to export GSM8K, MBPP, and ScienceQA prompts via the venv with datasets/pillow
-- create REASON-TRAINING.md detailing Stage B/C curriculum steps, including export/tokenize/merge commands in executable order
-- document the Stage A gated HRM warmup recipe in TRAINING.md for reproducibility and append recent actions to llm.state
+- extend scripts/merge_prepared_batches.py with weighted mixing support for processed datasets (train/val targets, oversampling small corpora)
+- refresh REASON-TRAINING.md to document the new --sources/--weights --output command with optional ScienceQA mix
+- record script/runbook updates in llm.state for reproducibility

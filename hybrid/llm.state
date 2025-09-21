@@ -613,6 +613,9 @@
 4. Identify the precise root cause and outline remediation steps (code fix, data correction, or configuration tweak).
 
 ### Action Log
+- 2025-09-21T04:02Z: Validated merge_prepared_batches.py via python -m compileall after modifications.
+- 2025-09-21T04:02Z: Updated REASON-TRAINING.md Stage B merge command to use new mixing options and sample caps.
+- 2025-09-21T04:02Z: Extended merge_prepared_batches.py to mix processed datasets with weights/targets for Stage B blends.
 - 2025-09-21T03:59Z: Added gated HRM warmup recipe to TRAINING.md for reproducible Stage A runs.
 - 2025-09-21T03:59Z: Updated REASON-TRAINING.md with venv-friendly export/tokenize commands and optional ScienceQA mix notes.
 - 2025-09-21T03:56Z: Tokenized reasoning datasets with tokenizer.json (30 threads, batch 8192) into datasets/reasoning/*/processed.

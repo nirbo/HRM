@@ -30,9 +30,10 @@ Integration:
 
 import argparse  # Parse command-line flags for batch/root/output configuration.
 import json  # Load and emit metadata payloads for each dataset chunk.
+import math  # Support weighted rounding when mixing datasets.
 import os  # Provide low-level OS helpers used during atomic file replacement.
 from pathlib import Path  # Handle filesystem paths with convenient methods.
-from typing import Dict, Iterable, Optional, Tuple  # Annotate helper function signatures.
+from typing import Dict, Iterable, List, Optional, Tuple  # Annotate helper function signatures.
 
 import shutil  # Stream chunk files into consolidated outputs with copyfileobj.
 
@@ -138,11 +139,129 @@ def merge_batches(batch_root: Path, output_dir: Path, keep_chunks: bool) -> None
     batch_root.rmdir()  # Remove the now-empty batch root directory.
 
 
+def mix_processed_datasets(sources: List[Path], weights: List[float], output: Path, train_samples: Optional[int], val_samples: Optional[int]) -> None:
+  """Interleave processed datasets according to ``weights`` into ``output``."""
+  if len(sources) != len(weights):
+    raise ValueError('Number of sources must match number of weights')
+  if not sources:
+    raise ValueError('At least one source directory is required')
+
+  metas: List[Dict[str, int]] = []
+  for directory in sources:
+    meta_path = directory / 'meta.json'
+    if not meta_path.exists():
+      raise FileNotFoundError(f'Metadata file missing in {directory}')
+    metas.append(load_meta(meta_path))
+
+  output.mkdir(parents=True, exist_ok=True)
+  train_out = output / 'train.jsonl'
+  val_out = output / 'val.jsonl'
+  meta_out = output / 'meta.json'
+  if train_out.exists() or val_out.exists():
+    raise FileExistsError(f'Destination {output} already contains train/val files')
+
+  weight_sum = sum(weights)
+  if weight_sum <= 0:
+    raise ValueError('Weights must sum to a positive value')
+  norm_weights = [w / weight_sum for w in weights]
+
+  max_train = max(meta.get('train_samples', 0) for meta in metas)
+  max_val = max(meta.get('val_samples', 0) for meta in metas)
+  target_train = train_samples if train_samples and train_samples > 0 else max_train
+  target_val = val_samples if val_samples and val_samples > 0 else max_val
+
+  def compute_targets(total: int) -> List[int]:
+    if total <= 0:
+      return [0] * len(norm_weights)
+    raw = [w * total for w in norm_weights]
+    floor_vals = [math.floor(x) for x in raw]
+    remainder = total - sum(floor_vals)
+    fractional = [raw[i] - floor_vals[i] for i in range(len(raw))]
+    while remainder > 0:
+      idx = max(range(len(fractional)), key=lambda i: fractional[i])
+      floor_vals[idx] += 1
+      fractional[idx] = 0.0
+      remainder -= 1
+    return floor_vals
+
+  train_targets = compute_targets(target_train)
+  val_targets = compute_targets(target_val)
+
+  def write_split(split: str, targets: List[int]):
+    out_path = train_out if split == 'train' else val_out
+    with out_path.open('w', encoding='utf-8') as out_handle:
+      for directory, quota, meta in zip(sources, targets, metas):
+        if quota <= 0:
+          continue
+        file_path = directory / f'{split}.jsonl'
+        if not file_path.exists():
+          continue
+        available = meta.get(f'{split}_samples', 0)
+        if available <= 0:
+          continue
+        if quota <= available:
+          with file_path.open('r', encoding='utf-8') as src:
+            for idx, line in enumerate(src):
+              if idx >= quota:
+                break
+              out_handle.write(line)
+        else:
+          with file_path.open('r', encoding='utf-8') as src:
+            lines = src.readlines()
+          if not lines:
+            continue
+          full_cycles, remainder = divmod(quota, len(lines))
+          for _ in range(full_cycles):
+            for line in lines:
+              out_handle.write(line)
+          for idx in range(remainder):
+            out_handle.write(lines[idx])
+
+  write_split('train', train_targets)
+  write_split('val', val_targets)
+
+  exemplar_meta = metas[0]
+  consolidated_meta = {
+    'max_seq_len': exemplar_meta.get('max_seq_len', 0),
+    'train_samples': sum(train_targets),
+    'val_samples': sum(val_targets),
+    'vocab_size': exemplar_meta.get('vocab_size', 0),
+    'tokenizer_file': exemplar_meta.get('tokenizer_file', ''),
+    'pad_id': exemplar_meta.get('pad_id', 0),
+    'bos_id': exemplar_meta.get('bos_id', 0),
+    'eos_id': exemplar_meta.get('eos_id', 0),
+  }
+
+  with meta_out.open('w', encoding='utf-8') as handle:
+    json.dump(consolidated_meta, handle, indent=2)
+    handle.write('\n')
+
+
 if __name__ == '__main__':  # Execute CLI logic when the module is invoked directly.
-  parser = argparse.ArgumentParser(description='Merge chunked HRM-LM dataset outputs into a single dataset.')  # Set up CLI parser with descriptive help text.
-  parser.add_argument('--batches', type=Path, required=True, help='Directory containing chunk subdirectories to merge.')  # Define required batch root argument.
-  parser.add_argument('--output-dir', type=Path, required=True, help='Destination directory for the consolidated dataset.')  # Define required output directory argument.
-  parser.add_argument('--keep-chunks', action='store_true', help='Preserve chunk directories instead of deleting them after merge.')  # Optional flag to retain chunk artifacts.
+  parser = argparse.ArgumentParser(description='Merge or mix HRM-LM dataset outputs into a single dataset.')  # Set up CLI parser with descriptive help text.
+  parser.add_argument('--batches', type=Path, help='Directory containing chunk subdirectories to merge (chunked mode).')  # Optional batch root argument.
+  parser.add_argument('--output-dir', type=Path, help='Destination directory for the consolidated dataset (chunked mode).')  # Destination for chunk merge.
+  parser.add_argument('--keep-chunks', action='store_true', help='Preserve chunk directories instead of deleting them after merge (chunked mode).')  # Optional flag to retain chunk artifacts.
+  parser.add_argument('--sources', type=Path, nargs='+', help='Processed dataset directories to mix using weights.')  # New mixing mode sources.
+  parser.add_argument('--weights', type=float, nargs='+', help='Mixing weights for --sources.')  # New mixing mode weights.
+  parser.add_argument('--output', type=Path, help='Destination directory for the mixed dataset.')  # Output for mixing mode.
+  parser.add_argument('--train-samples', type=int, default=0, help='Target number of mixed training samples (default: largest source).')  # Optional train sample cap.
+  parser.add_argument('--val-samples', type=int, default=0, help='Target number of mixed validation samples (default: largest source).')  # Optional val sample cap.
   args = parser.parse_args()  # Parse command-line arguments into a namespace.
 
-  merge_batches(batch_root=args.batches, output_dir=args.output_dir, keep_chunks=args.keep_chunks)  # Invoke the merge workflow with parsed arguments.
+  if args.sources:
+    if not args.weights or len(args.sources) != len(args.weights):
+      raise ValueError('--sources requires --weights of matching length')
+    if not args.output:
+      raise ValueError('--sources requires --output to be specified')
+    mix_processed_datasets(
+      sources=args.sources,
+      weights=args.weights,
+      output=args.output,
+      train_samples=args.train_samples,
+      val_samples=args.val_samples,
+    )
+  else:
+    if not args.batches or not args.output_dir:
+      raise ValueError('Chunk merge mode requires --batches and --output-dir')
+    merge_batches(batch_root=args.batches, output_dir=args.output_dir, keep_chunks=args.keep_chunks)  # Invoke the merge workflow with parsed arguments.
