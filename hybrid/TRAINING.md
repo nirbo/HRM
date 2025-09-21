@@ -183,6 +183,40 @@ Additional notes:
 - Use `--lr_min_ratio` to keep cosine/linear schedules from collapsing the learning rate during very long runs.
 - When a CUDA kernel times out the trainer now catches the failure, flushes caches safely, and retries the step after a short pause; the warning message tells you the retry is happening.
 
+### Gated HRM Language Warmup (Stage A)
+Use this recipe to reproduce the initial English-only stabilization run before introducing reasoning curricula:
+
+1. Make sure `datasets/wiki_chunks/processed` (≈1.22B tokens) exists via `scripts/prepare_language_dataset.py` as described above.
+2. Launch the gated run with AdamW 8-bit, HRM gate warmup, and patience grace period:
+
+```bash
+python -m hrm_lm.training.train \
+  --dataset datasets/wiki_chunks/processed/ \
+  --batch_size 22 \
+  --steps 308212 \
+  --learning_rate 0.00025 \
+  --warmup_steps 4000 \
+  --lr_scheduler cosine \
+  --lr_min_ratio 0.05 \
+  --grad_clip 5.0 \
+  --val_every 1500 \
+  --run_name hrm-gated-pretrain \
+  --checkpoint_limit 5 \
+  --mixed_precision bf16 \
+  --eval_batch_size 22 \
+  --log_steps 1 \
+  --dataset_workers 30 \
+  --save_best_model \
+  --optimizer adamw_8bit \
+  --max_seq_len 512 \
+  --max_val_samples 20000 \
+  --eval_loss_patience 3 \
+  --patience_grace_steps 10000 \
+  --hrm_gate_warmup_steps 8000
+```
+
+3. Allow the run to continue until validation loss plateaus (≥30k steps recommended) before enabling HRM auxiliaries or mixing reasoning datasets.
+
 ## Useful Shortcuts
 
 - Regenerate synthetic dataset vocabulary: `build_synthetic_dataset()` in `hrm_lm.data.synthetic`.

@@ -1,6 +1,5 @@
-Add HRM warmup controls and trainer stability docs
+Document gated HRM warmup and add reasoning dataset builder
 
-- extend training CLI with patience grace, HRM gate warmup, and LR floor options and wire runtime behavior into warmup, scheduler, and early-stop logic
-- add gate_scale buffer to HRM hybrid model so curricula can stage decoder conditioning without touching bridge internals
-- document new trainer flags in TRAINING.md and note warmup/lr-floor usage for large runs
-- record session updates in llm.state for reproducibility and include tokenizer.json artifact required for fresh training runs
+- add scripts/build_reasoning_dataset.py to export GSM8K, MBPP, and ScienceQA prompts via the venv with datasets/pillow
+- create REASON-TRAINING.md detailing Stage B/C curriculum steps, including export/tokenize/merge commands in executable order
+- document the Stage A gated HRM warmup recipe in TRAINING.md for reproducibility and append recent actions to llm.state

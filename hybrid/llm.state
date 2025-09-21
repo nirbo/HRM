@@ -613,6 +613,21 @@
 4. Identify the precise root cause and outline remediation steps (code fix, data correction, or configuration tweak).
 
 ### Action Log
+- 2025-09-21T03:59Z: Added gated HRM warmup recipe to TRAINING.md for reproducible Stage A runs.
+- 2025-09-21T03:59Z: Updated REASON-TRAINING.md with venv-friendly export/tokenize commands and optional ScienceQA mix notes.
+- 2025-09-21T03:56Z: Tokenized reasoning datasets with tokenizer.json (30 threads, batch 8192) into datasets/reasoning/*/processed.
+- 2025-09-21T03:56Z: Exported Hugging Face reasoning corpora (gsm8k, mbpp, science_qa) via build_reasoning_dataset.py using venv python.
+- 2025-09-21T03:49Z: Ran python -m compileall scripts/build_reasoning_dataset.py to validate syntax.
+- 2025-09-21T03:49Z: Updated REASON-TRAINING.md with Stage B dataset commands and prepare_language_dataset usage.
+- 2025-09-21T03:49Z: Added scripts/build_reasoning_dataset.py for exporting GSM8K/MBPP/ScienceQA reasoning prompts.
+- 2025-09-21T03:47Z: User ready to start Stage B dataset build; planning synthetic/math/code reasoning generators.
+- 2025-09-21T03:45Z: Authored REASON-TRAINING.md outlining Stage A/B/C curriculum, dataset mixing, and training commands.
+- 2025-09-21T03:42Z: Eval at step 13500 reached loss 5.050 as curve continues downward during cosine decay.
+- 2025-09-21T03:36Z: Eval at step 12000 reached loss 5.118; early-stop guard now active (3 consecutive increases) while best checkpoints rotate at step cadence.
+- 2025-09-21T03:31Z: Post-grace eval at step 10500 logged loss 5.226 (train ≈5.1), confirming stable HRM integration during decay.
+- 2025-09-21T03:23Z: HRM gate opened at step 8000 without loss spike; monitoring upcoming eval after grace window.
+- 2025-09-21T03:22Z: Pre-gate eval at step 7500 yielded loss 5.508 (train ~5.3), confirming stable language warmup before HRM activation.
+- 2025-09-21T03:13Z: First grace-window eval at step 4500 returned loss 6.0008 (aligned with train ~6.0), confirming stable warmup before gate opening.
 - 2025-09-21T03:01Z: Observed training loss drop to ~7.5 by step 630 with smooth warmup (lr ≈3.9e-5, gate still closed).
 - 2025-09-21T03:00Z: Launched fresh run hrm-gated-pretrain (batch 22, adamw_8bit) with patience grace, gate warmup, and LR floor; monitoring warmup behaviour.
 - 2025-09-21T02:56Z: Resume failed due to missing gate_scale buffer in legacy checkpoints; discussing fresh run vs. compatibility patch.
