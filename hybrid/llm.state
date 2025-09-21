@@ -613,6 +613,7 @@
 4. Identify the precise root cause and outline remediation steps (code fix, data correction, or configuration tweak).
 
 ### Action Log
+- 2025-09-21T18:45Z: Made checkpoint loading lenient (strict=False) and logged missing/unexpected keys for Stage B halting head initialization.
 - 2025-09-21T14:44Z: Primed inference decoder with prompt tokens in generate.py and validated via compileall so generations extend the input.
 - 2025-09-21T14:34Z: Stage A run hit CUDA OOM at step 82502 (attempted 5.5 GiB allocation); advised retry with PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True or reduced batch.
 - 2025-09-21T04:04Z: Stage A run at step 21000 reported eval loss 4.826 (train ~4.7), maintaining downward trend.

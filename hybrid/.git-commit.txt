@@ -1,5 +1,4 @@
-Improve allocator setup and prompt-primed inference
+Allow new halting head when loading Stage B checkpoints
 
-- set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True inside train.py to mitigate long-run CUDA fragmentation
-- prime decoder with prompt tokens in inference/generate.py so completions extend the input instead of restarting from BOS
-- log the OOM guidance and inference update in llm.state for reproducibility
+- load checkpoints with strict=False and log missing/unexpected keys so new modules (halt head) initialize cleanly
+- record the change in llm.state and validate via python -m compileall

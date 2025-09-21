@@ -576,7 +576,13 @@ def main():
     resume = find_latest_checkpoint(save_dir, device)
     if resume is not None:
       resume_step, resume_path, data = resume
-      model.load_state_dict(data['state_dict'])
+      load_result = model.load_state_dict(data['state_dict'], strict=False)
+      missing_keys = getattr(load_result, 'missing_keys', [])
+      unexpected_keys = getattr(load_result, 'unexpected_keys', [])
+      if missing_keys:
+        console.print(f"[bold yellow]Warning:[/bold yellow] missing keys when loading checkpoint: {missing_keys}")
+      if unexpected_keys:
+        console.print(f"[bold yellow]Warning:[/bold yellow] unexpected keys when loading checkpoint: {unexpected_keys}")
       if args.reset_progress:
         console.print(f'[bold cyan]Loaded weights from {resume_path}; resetting optimizer state and step counter.[/bold cyan]')
         start_step = 0
