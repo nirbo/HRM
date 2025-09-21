@@ -561,7 +561,7 @@
 - 2025-09-20T00:22Z: Pushed commit to origin/hybrid via git push.
 - 2025-09-20T15:12Z: Fetched PyTorch float8 FSDP2 blog, Medium FP8 article, TorchAO README, float8 rowwise blog, Axolotl mixed precision docs, FP8-LM paper, Reddit FP8 discussion, and NVIDIA FP8 intro using custom parser for analysis.
 - 2025-09-20T15:28Z: Authored FP8.md summarizing research findings and feasibility guidance.
-- 2025-09-20T15:36Z: Updated CUDA timeout retry logic (safe synchronize handling, cache flush, pause) and documented behaviour.\n- 2025-09-20T15:37Z: Committed CUDA timeout fix (`git commit -m "Improve CUDA timeout recovery"`).\n- 2025-09-20T15:37Z: Pushed commit to origin/hybrid via git push.\n- 2025-09-20T15:44Z: Updated chunk_text_dataset.py to accept local tokenizer files.\n- 2025-09-20T15:44Z: Documented chunking workflow and commands in TRAINING.md.\n- 2025-09-20T15:45Z: Committed chunking helper and docs (`git commit -m "Add chunking helper and document workflow"`).\n- 2025-09-20T15:45Z: Pushed chunking helper commit to origin/hybrid.\n- 2025-09-20T15:47Z: Tweaked chunk_text_dataset.py to load standalone tokenizer.json via PreTrainedTokenizerFast and set fallback special tokens.\n- 2025-09-20T15:47Z: Committed chunker tokenizer fix (`git commit -m "Handle local tokenizer in chunker"`).\n- 2025-09-20T15:47Z: Pushed chunker tokenizer fix to origin/hybrid.\n- 2025-09-20T15:49Z: Expanded README architecture section with current implementation highlights.\n
+- 2025-09-20T15:36Z: Updated CUDA timeout retry logic (safe synchronize handling, cache flush, pause) and documented behaviour.\n- 2025-09-20T15:37Z: Committed CUDA timeout fix (`git commit -m "Improve CUDA timeout recovery"`).\n- 2025-09-20T15:37Z: Pushed commit to origin/hybrid via git push.\n- 2025-09-20T15:44Z: Updated chunk_text_dataset.py to accept local tokenizer files.\n- 2025-09-20T15:44Z: Documented chunking workflow and commands in TRAINING.md.\n- 2025-09-20T15:45Z: Committed chunking helper and docs (`git commit -m "Add chunking helper and document workflow"`).\n- 2025-09-20T15:45Z: Pushed chunking helper commit to origin/hybrid.\n- 2025-09-20T15:47Z: Tweaked chunk_text_dataset.py to load standalone tokenizer.json via PreTrainedTokenizerFast and set fallback special tokens.\n- 2025-09-20T15:47Z: Committed chunker tokenizer fix (`git commit -m "Handle local tokenizer in chunker"`).\n- 2025-09-20T15:47Z: Pushed chunker tokenizer fix to origin/hybrid.\n- 2025-09-20T15:49Z: Expanded README architecture section with current implementation highlights.\n- 2025-09-20T15:49Z: Committed README architecture doc refresh (`git commit -m "Document current architecture in README"`).\n- 2025-09-20T15:49Z: Pushed README architecture update to origin/hybrid.\n
 ### Pending Steps
 - Step 3: Diagnose inference quality and recommend next steps.
 
@@ -601,3 +601,65 @@
 
 ### Task Completion Summary
 - Pending task execution.
+
+## Session 2025-09-21T01:08Z
+### Original Task Description
+- Diagnose and resolve the JSON decode failure encountered while streaming the validation split during `python -m hrm_lm.training.train`.
+
+### Plan
+1. Review high-level project context (README, training docs) to refresh assumptions about dataset format expectations.
+2. Inspect `src/hrm_lm/training/train.py` dataset loading utilities, focusing on JSONL parsing and multiprocessing flow.
+3. Sample lines from `datasets/wiki_chunks/processed/val.jsonl` near the reported failure offset to verify JSON integrity.
+4. Identify the precise root cause and outline remediation steps (code fix, data correction, or configuration tweak).
+
+### Action Log
+- 2025-09-21T03:01Z: Observed training loss drop to ~7.5 by step 630 with smooth warmup (lr ≈3.9e-5, gate still closed).
+- 2025-09-21T03:00Z: Launched fresh run hrm-gated-pretrain (batch 22, adamw_8bit) with patience grace, gate warmup, and LR floor; monitoring warmup behaviour.
+- 2025-09-21T02:56Z: Resume failed due to missing gate_scale buffer in legacy checkpoints; discussing fresh run vs. compatibility patch.
+- 2025-09-21T02:37Z: Documented new trainer flags (patience grace, gate warmup, LR floor, max_val_samples) in TRAINING.md.
+- 2025-09-21T02:33Z: Ran python -m compileall on updated hybrid.py and train.py to confirm syntax.
+- 2025-09-21T02:32Z: Added CLI flags for patience grace, HRM gate warmup, and LR floor plus associated schedule logic in train.py.
+- 2025-09-21T02:32Z: Introduced HRM gate scaling buffer and warmup handling in hybrid model to support staged curricula.
+- 2025-09-21T02:30Z: User rebuilding dataset with 0.5% validation; preparing code changes (patience grace, gate warmup, scheduler floor, aux toggles).
+- 2025-09-21T02:21Z: Reviewed docs/HRM_LM_Integration_Design.md for architecture-specific training considerations.
+- 2025-09-21T02:21Z: Attempted to inspect research directory for HRM notes; directory missing under hybrid repo.
+- 2025-09-21T02:21Z: User wants strategic guidance on training HRM-Mamba hybrid (retain early stop). Planning deep dive into architecture-specific training considerations.
+- 2025-09-21T01:59Z: Drafted training continuation recommendations (increase patience/disable early stop, resume from latest checkpoint, monitor eval variance).
+- 2025-09-21T01:59Z: Evaluated cosine LR schedule dynamics post-warmup and noted small decay (~0.0008 progress) at step 4250; early stop likely driven by validation noise.
+- 2025-09-21T01:58Z: Inspected early stopping logic in src/hrm_lm/training/train.py to confirm patience behaviour (resets on non-increase).
+- 2025-09-21T01:57Z: Noted user report of early stopping at step 4250 (validation loss plateau) and preparing guidance on next training actions.
+- 2025-09-21T01:08Z: Listed repository root contents via `ls` to confirm project structure and statefile presence.
+- 2025-09-21T01:09Z: Captured current UTC timestamp for session logging.
+- 2025-09-21T01:09Z: Reviewed `README.md` header and intro sections for project overview per task instructions.
+
+- 2025-09-21T01:08Z: Updated task plan via plan tool to reflect completed context review.
+- 2025-09-21T01:09Z: Reviewed dataset loader and JSON parsing functions in src/hrm_lm/training/train.py to trace failure path.
+- 2025-09-21T01:09Z: Updated plan progress to mark dataset loader review complete and start dataset inspection step.
+- 2025-09-21T01:10Z: Ran targeted JSON validation scripts on datasets/wiki_chunks/processed/val.jsonl and isolated truncated record at line 3144 lacking closing delimiters.
+- 2025-09-21T01:10Z: Marked dataset inspection step complete after confirming malformed validation record.
+- 2025-09-21T01:11Z: Logged Python helper failure when attempting plan completion update (Path.read_text misuse); no file changes resulted.
+- 2025-09-21T01:11Z: Completed plan by drafting remediation guidance for truncated validation sample.
+- 2025-09-21T01:12Z: Encountered SyntaxError while updating task completion summary due to multiline string quoting; no statefile changes applied.
+- 2025-09-21T01:12Z: TypeError while updating completion summary (string concatenation with tuple); statefile unchanged.
+- 2025-09-21T01:22Z: Provided guidance on remediation options for malformed val.jsonl record (regenerate via prepare_language_dataset.py vs targeted repair).
+- 2025-09-21T01:23Z: Reviewing prepare_language_dataset.py to confirm multiprocessing/tokenizer parallelism before re-run completes.
+- 2025-09-21T01:23Z: Confirmed prepare_language_dataset.py uses tokenizer.encode_batch with RAYON_NUM_THREADS to leverage parallel Rust tokenization; overall pipeline remains single-process but per-batch encoding is multithreaded.
+### Pending Steps
+- None; plan complete.
+
+### Current Summary
+- Added trainer flags for patience grace, HRM gate warmup, and LR floors while preparing to relaunch with a rebuilt dataset (0.5% validation split).
+
+### Open Issues
+- Await completion of the new dataset split and rerun quick JSON validation before training.
+- Re-launch `wikipedia-train-3` with updated flags (patience grace, gate warmup, LR floor) and monitor early-stop behaviour.
+- Decide when to enable HRM deep supervision/halting during the curriculum stages.
+
+### Task Completion Summary
+- Diagnosed validation loader failure: `val.jsonl` line 3144 is truncated (missing closing brackets/newline), causing `json.loads` to raise `Expecting ',' delimiter` during `_parse_json_line`.
+- Recommended remediation: regenerate or repair the validation dataset (drop or reconstruct the malformed entry, refresh metadata) and optionally guard `_parse_json_line` with try/except to skip/log corrupt samples.
+- Implemented patience grace, HRM gate warmup, and learning-rate floor controls plus gate-scaling buffer support for staged HRM training.
+
+- Diagnosed validation loader failure: `val.jsonl` line 3144 is truncated (missing closing brackets/newline), causing `json.loads` to raise `Expecting ',' delimiter` during `_parse_json_line`.
+- Recommended remediation: regenerate or repair the validation dataset (drop or reconstruct the malformed entry, refresh metadata) and optionally guard `_parse_json_line` with try/except to skip/log corrupt samples.
+

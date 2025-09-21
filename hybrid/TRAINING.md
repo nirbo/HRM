@@ -155,6 +155,7 @@ To add a custom dataset:
 | `--epochs` | `0` | Number of epochs (computed from dataset size) when `--steps` ≤ 0. |
 | `--val_every` | `0` | Validation/checkpoint frequency in steps (disabled when `0`). |
 | `--eval_loss_patience` | `3` | Stop training after this many consecutive validation loss increases (`0` disables early stop). |
+| `--patience_grace_steps` | `0` | Minimum global step before patience counting starts (useful to ignore noisy post-warmup evals). |
 | `--save_dir` | `None` | Legacy manual checkpoint directory (overridden by `--run_name`). |
 | `--run_name` | `None` | Creates `runs/<run-name>/checkpoints/` (required for `--save_best_model`). |
 | `--checkpoint_limit` | `0` | Maximum number of `step_*.pt` checkpoints to retain (FIFO). `0` disables rotation. |
@@ -162,6 +163,9 @@ To add a custom dataset:
 | `--max_seq_len` | config value | Truncate encoder/decoder sequences to this length. |
 | `--log_steps` | `10` | Emit Rich-formatted training metrics every N steps. |
 | `--dataset_workers` | `0` | Number of worker processes for JSONL loading (`0`/`1` = single-process). |
+| `--max_val_samples` | `0` | Cap the number of validation samples per eval sweep (`0` uses the full split). |
+| `--hrm_gate_warmup_steps` | `0` | Hold the HRM bridge gate at zero for the first N steps before blending HRM latents into the decoder. |
+| `--lr_min_ratio` | `0.0` | Floor multiplier for cosine/linear schedulers (e.g. `0.05` keeps LR ≥5% of the base). |
 | `--mixed_precision` | `none` | Precision mode: `none`, `bf16`, or `fp16` (fp16 requires CUDA). |
 | `--grad_clip` | `0.0` | L2 gradient clipping norm (disabled when ≤0). |
 | `--reset_progress` | *flag* | Load checkpoint weights but restart from step 0 (ignores optimizer/scaler state). |
@@ -174,6 +178,9 @@ Additional notes:
 - Validation runs over the entire `val.jsonl`, averaging loss across all batches for accurate metrics (override with `--max_val_samples`).
 - Validation loops now reuse the active mixed-precision autocast context, so bf16/fp16 runs no longer inflate memory during evaluation sweeps.
 - `--eval_loss_patience` provides an automatic safety stop when validation loss rises repeatedly; lower values trigger earlier restarts and `0` keeps training regardless of the trend.
+- Combine `--patience_grace_steps` with the early-stop flag to ignore the first few post-warmup evaluations until metrics stabilize.
+- `--hrm_gate_warmup_steps` lets you pretrain the language pathway before blending HRM latents; once the warmup window passes the gate opens automatically.
+- Use `--lr_min_ratio` to keep cosine/linear schedules from collapsing the learning rate during very long runs.
 - When a CUDA kernel times out the trainer now catches the failure, flushes caches safely, and retries the step after a short pause; the warning message tells you the retry is happening.
 
 ## Useful Shortcuts

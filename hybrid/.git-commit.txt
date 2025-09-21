@@ -1,9 +1,6 @@
-Document architecture highlights in README
+Add HRM warmup controls and trainer stability docs
 
-Summary:
-- call out deep supervision, gating, early-stop tooling, and data pipeline helpers in README architecture section
-- log the doc refresh in llm.state
-
-Files touched:
-- README.md
-- llm.state
+- extend training CLI with patience grace, HRM gate warmup, and LR floor options and wire runtime behavior into warmup, scheduler, and early-stop logic
+- add gate_scale buffer to HRM hybrid model so curricula can stage decoder conditioning without touching bridge internals
+- document new trainer flags in TRAINING.md and note warmup/lr-floor usage for large runs
+- record session updates in llm.state for reproducibility and include tokenizer.json artifact required for fresh training runs

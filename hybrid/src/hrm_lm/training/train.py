@@ -429,6 +429,7 @@ def main():
   parser.add_argument('--epochs', type=int, default=0)
   parser.add_argument('--val_every', type=int, default=0)
   parser.add_argument('--eval_loss_patience', type=int, default=3, help='Stop training after this many consecutive eval loss increases (0 disables).')  # Early-stop safeguard for rising validation loss.
+  parser.add_argument('--patience_grace_steps', type=int, default=0, help='Minimum global step before early-stop patience tracking activates.')  # Delay patience tracking until the model leaves initial transients.
   parser.add_argument('--save_dir', default=None)
   parser.add_argument('--mixed_precision', default='none')
   parser.add_argument('--grad_clip', type=float, default=0.0)
@@ -440,6 +441,8 @@ def main():
   parser.add_argument('--dataset_workers', type=int, default=0, help='Number of worker processes for JSONL loading (0 = single process).')  # Allow callers to opt into multiprocessing during dataset ingest.
   parser.add_argument('--reset_progress', action='store_true', help='Load weights from the latest checkpoint but restart optimizer state and step counter.')  # Enable fresh runs seeded from existing checkpoints.
   parser.add_argument('--max_val_samples', type=int, default=0, help='Limit the number of validation samples evaluated per checkpoint (0 = use all).')  # Allow partial validation sweeps for speed.
+  parser.add_argument('--hrm_gate_warmup_steps', type=int, default=0, help='Number of steps to keep the HRM bridge gate closed before enabling it (0 = immediate).')  # Smoothly introduce HRM conditioning after language warmup.
+  parser.add_argument('--lr_min_ratio', type=float, default=0.0, help='Lower bound multiplier applied to decay-based LR schedules (0 keeps the exact schedule shape).')  # Prevent cosine/linear schedules from decaying below a fixed floor.
   args = parser.parse_args()
 
   cfg = OmegaConf.load(args.config) if args.config else OmegaConf.load(Path(__file__).parent.parent / 'configs' / 'default.yaml')
@@ -448,6 +451,9 @@ def main():
   dataset_workers = max(1, min(requested_workers, cpu_cap))  # Clamp worker usage within the valid CPU range.
   max_val_samples = args.max_val_samples if args.max_val_samples and args.max_val_samples > 0 else None  # Optional cap on validation samples.
   eval_loss_patience = args.eval_loss_patience if args.eval_loss_patience and args.eval_loss_patience > 0 else 0  # Number of consecutive eval-loss increases tolerated before stopping.
+  patience_grace = max(0, args.patience_grace_steps)  # Minimum step index that enables early-stop patience tracking.
+  gate_warmup = max(0, args.hrm_gate_warmup_steps)  # Number of steps to hold the HRM gate closed during language warmup.
+  lr_min_ratio = max(0.0, float(args.lr_min_ratio))  # Floor multiplier applied to learning-rate decay schedules.
   set_seed(cfg.train.seed)
 
   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -608,6 +614,8 @@ def main():
         decay_factor = 1.0  # no decay applied
       else:  # safeguard against unexpected scheduler names
         raise ValueError(f"Unsupported lr scheduler '{args.lr_scheduler}'")  # raise explicit configuration error
+      if lr_min_ratio > 0.0:  # Enforce a minimum decay multiplier when requested.
+        decay_factor = max(decay_factor, lr_min_ratio)  # Clamp the multiplier to the configured floor.
       lr = base_lr * decay_factor  # scale base LR by selected decay factor
     set_learning_rate(optimizer, lr)  # push updated LR into optimizer parameter groups
     return lr  # expose the learning rate for logging
@@ -622,6 +630,15 @@ def main():
   for step in range(start_step, total_steps):
     global_step = step + 1
     current_lr = adjust_lr(global_step)
+
+    if hasattr(model, 'gate_scale'):  # Adjust HRM gate scaling when the model exposes the buffer.
+      if gate_warmup > 0:  # Only apply the warmup schedule when a positive duration is configured.
+        if global_step <= gate_warmup:  # Check whether we remain inside the warmup window.
+          model.gate_scale.fill_(0.0)  # Hold the gate closed to focus on language pretraining.
+        else:  # Warmup finished so full HRM influence can flow.
+          model.gate_scale.fill_(1.0)  # Restore standard gate scaling.
+      else:  # No warmup requested, ensure gate stays fully open.
+        model.gate_scale.fill_(1.0)  # Keep HRM influence enabled when no warmup is needed.
 
     enc, dec_in, labels, enc_mask, dec_mask = next(iterator)
     enc = truncate_to_max_length(enc, effective_seq_len).to(device)
@@ -782,12 +799,15 @@ def main():
         enforce_checkpoint_limit(save_dir, args.checkpoint_limit)
 
       if eval_loss_patience > 0:  # Engage early-stop tracking only when patience is positive.
-        if last_eval_loss is not None and v_loss > last_eval_loss:  # Detect validation loss increase relative to previous checkpoint.
-          consecutive_eval_increase += 1  # Increment the streak when loss worsens.
-        else:  # Otherwise the streak resets because loss improved or first measurement.
-          consecutive_eval_increase = 0  # Reset consecutive increase counter.
+        if global_step < patience_grace:  # Skip patience counting while still inside the grace window.
+          consecutive_eval_increase = 0  # Reset streak during grace period to avoid premature stops.
+        else:  # Once the grace period ends we can evaluate trends.
+          if last_eval_loss is not None and v_loss > last_eval_loss:  # Detect validation loss increase relative to previous checkpoint.
+            consecutive_eval_increase += 1  # Increment the streak when loss worsens.
+          else:  # Otherwise the streak resets because loss improved or first measurement.
+            consecutive_eval_increase = 0  # Reset consecutive increase counter.
         last_eval_loss = v_loss  # Persist current validation loss for the next comparison.
-        if consecutive_eval_increase >= eval_loss_patience:  # Check whether patience has been exhausted.
+        if global_step >= patience_grace and consecutive_eval_increase >= eval_loss_patience:  # Check patience only after grace period elapses.
           console.print(f"[bold red]Early stopping: validation loss increased for {eval_loss_patience} consecutive evals at step {global_step}. Halting training.[/bold red]")  # Emit clear shutdown message.
           early_stop_triggered = True  # Signal the outer loop to terminate.
 

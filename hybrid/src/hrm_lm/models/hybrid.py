@@ -25,6 +25,7 @@ class HRMLanguageModel(nn.Module):
       self.hrm2dec = HRMToCrossAttnBridge(d_model)
     self.decoder = LMDecoder(vocab_size, d_model, dec_layers, max_dec_len)
     self.hrm_gate = HRMGate(d_model)  # learnable bridge gate
+    self.register_buffer('gate_scale', torch.tensor(1.0, dtype=torch.float32))  # Scalar multiplier controlling HRM gate strength.
 
   def forward(self, input_ids, decoder_input_ids, enc_attn_mask=None, dec_attn_mask=None, labels=None):
     enc_h, cls = self.encoder(input_ids, enc_attn_mask)
@@ -33,7 +34,8 @@ class HRMLanguageModel(nn.Module):
     z, aux = self.hrm(x, return_all=need_aux)  # run HRM core with optional aux
     if not need_aux:
       aux = None  # normalize aux when unused
-    gate = self.hrm_gate(z).view(-1, 1, 1)  # compute gating signal
+    gate_raw = self.hrm_gate(z)  # compute gating signal before scaling.
+    gate = (self.gate_scale * gate_raw).view(-1, 1, 1)  # apply warmup scaling and broadcast gate.
     if self.bridge_type == 'prefix':
       mem_hrm = self.hrm2dec(z)  # project HRM latent to prefix tokens
       mem_base = torch.zeros_like(mem_hrm)  # baseline memory
