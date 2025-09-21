@@ -21,6 +21,8 @@ from rich.console import Console
 from hrm_lm.data.synthetic import build_synthetic_dataset, pad_batch
 from hrm_lm.models.hybrid import HRMLanguageModel
 
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 warnings.filterwarnings('ignore', message='.*Nested Tensor.*')
 console = Console(highlight=False)
 

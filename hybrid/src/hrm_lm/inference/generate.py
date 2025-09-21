@@ -78,11 +78,19 @@ def load_artifact_tokenizer(checkpoint_dir: Optional[Path]):
 def generate(model: HRMLanguageModel, tokenizer, prompt: str, max_new_tokens: int = 64, device: str = 'cpu') -> str:
   model.eval()  # switch to eval mode
   dev = torch.device(device)  # normalize device handle
-  enc = torch.tensor([tokenizer.encode(prompt, add_specials=True)], dtype=torch.long, device=dev)  # encode prompt
+  prompt_ids = tokenizer.encode(prompt, add_specials=True)  # encode prompt once (with specials)
+  enc = torch.tensor([prompt_ids], dtype=torch.long, device=dev)  # encoder input uses full prompt
   bos = tokenizer.bos_id if hasattr(tokenizer, 'bos_id') else BOS_ID  # pick BOS id
   pad = tokenizer.pad_id if hasattr(tokenizer, 'pad_id') else 0  # pick PAD id
   eos = tokenizer.eos_id if hasattr(tokenizer, 'eos_id') else EOS_ID  # pick EOS id
-  dec = torch.tensor([[bos]], dtype=torch.long, device=dev)  # seed decoder input
+  if prompt_ids and prompt_ids[-1] == eos:  # remove trailing EOS to avoid duplicate
+    dec_seed = prompt_ids[:-1]
+  else:
+    dec_seed = prompt_ids
+  if not dec_seed:  # ensure decoder has at least BOS when prompt was empty
+    dec_seed = [bos] if bos is not None else []
+  dec = torch.tensor([dec_seed], dtype=torch.long, device=dev)  # seed decoder with prompt tokens
+  base_len = dec.size(1)  # remember prompt length for continuation slicing
   enc_mask = (enc != pad).long()  # encoder mask
   for _ in range(max_new_tokens):  # iterate decoding steps
     dec_mask = (dec != pad).long()  # decoder mask
@@ -92,7 +100,10 @@ def generate(model: HRMLanguageModel, tokenizer, prompt: str, max_new_tokens: in
     dec = torch.cat([dec, next_token], dim=1)  # append token
     if int(next_token.item()) == eos:  # stop at EOS
       break  # exit loop
-  return tokenizer.decode(dec[0].tolist())  # decode tokens
+  full_tokens = dec[0].tolist()  # collect full sequence (prompt + continuation)
+  continuation_ids = full_tokens[base_len:]  # isolate generated continuation
+  continuation_text = tokenizer.decode(continuation_ids, skip_specials=True)  # decode continuation only
+  return prompt + continuation_text  # append continuation to original prompt
 
 
 def _default_config_path() -> str:

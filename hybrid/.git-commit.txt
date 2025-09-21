@@ -1,5 +1,5 @@
-Add dataset mixing mode for Stage B merge workflow
+Improve allocator setup and prompt-primed inference
 
-- extend scripts/merge_prepared_batches.py with weighted mixing support for processed datasets (train/val targets, oversampling small corpora)
-- refresh REASON-TRAINING.md to document the new --sources/--weights --output command with optional ScienceQA mix
-- record script/runbook updates in llm.state for reproducibility
+- set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True inside train.py to mitigate long-run CUDA fragmentation
+- prime decoder with prompt tokens in inference/generate.py so completions extend the input instead of restarting from BOS
+- log the OOM guidance and inference update in llm.state for reproducibility

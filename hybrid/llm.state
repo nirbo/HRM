@@ -613,6 +613,10 @@
 4. Identify the precise root cause and outline remediation steps (code fix, data correction, or configuration tweak).
 
 ### Action Log
+- 2025-09-21T14:44Z: Primed inference decoder with prompt tokens in generate.py and validated via compileall so generations extend the input.
+- 2025-09-21T14:34Z: Stage A run hit CUDA OOM at step 82502 (attempted 5.5 GiB allocation); advised retry with PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True or reduced batch.
+- 2025-09-21T04:04Z: Stage A run at step 21000 reported eval loss 4.826 (train ~4.7), maintaining downward trend.
+- 2025-09-21T04:04Z: Mixed wiki/gsm8k/mbpp into datasets/hybrid_mix_stageB (2.2M train / 10k val, ~9 GB) via new weighted merge command.
 - 2025-09-21T04:02Z: Validated merge_prepared_batches.py via python -m compileall after modifications.
 - 2025-09-21T04:02Z: Updated REASON-TRAINING.md Stage B merge command to use new mixing options and sample caps.
 - 2025-09-21T04:02Z: Extended merge_prepared_batches.py to mix processed datasets with weights/targets for Stage B blends.
