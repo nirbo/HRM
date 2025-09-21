@@ -1,10 +1,9 @@
-Handle local tokenizer files in chunker
+Document architecture highlights in README
 
 Summary:
-- load standalone tokenizer.json via PreTrainedTokenizerFast so chunk_text_dataset.py works without a config directory
-- set fallback <bos>/<eos>/<pad> tokens when missing
-- log the update in llm.state
+- call out deep supervision, gating, early-stop tooling, and data pipeline helpers in README architecture section
+- log the doc refresh in llm.state
 
 Files touched:
-- scripts/chunk_text_dataset.py
+- README.md
 - llm.state

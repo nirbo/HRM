@@ -6,10 +6,17 @@ This prototype implements a hybrid architecture that marries a lightweight langu
 
 - **Encoder**: Token embeddings plus positional encoding feed either a Transformer or Mamba2 stack (toggle via `model.encoder.backend`). The encoder produces contextual token states and a pooled `[CLS]` embedding.
 - **Prompt Bridge**: A linear projection (`PromptToHRMBridge`) maps the encoder’s pooled state into the HRM latent space.
-- **HRM Core**: Two coupled recurrent modules operate at different timescales: the high-level module (H) aggregates information once per cycle while the low-level module (L) iterates multiple steps guided by top-down signals. The final cycle participates in autograd (one-step gradient approximation) and emits per-cycle latents, optional halting probabilities, and the final reasoning vector.
+- **HRM Core**: Two coupled recurrent modules operate at different timescales: the high-level module (H) aggregates information once per cycle while the low-level module (L) iterates multiple steps guided by top-down signals. The final cycle participates in autograd (one-step gradient approximation) and emits per-cycle latents, optional halting probabilities, and the final reasoning vector. Deep supervision (optional) reuses intermediate latents for auxiliary decoder losses.
 - **Bridge to Decoder**: Depending on `bridge.type`, the HRM latent is projected into (a) prefix tokens that prepend the decoder input or (b) a single cross-attention memory vector. A learnable gate interpolates between HRM-conditioned memory and a null baseline.
 - **Decoder**: A Transformer decoder consumes autoregressive inputs, conditioned on HRM memory, to produce next-token logits.
 - **Training**: `hrm_lm.training.train` wires the pieces together, supports deep supervision over intermediate HRM cycles, optional halting regularization, mixed precision, validation checkpoints, and dataset iterators.
+
+### Implemented Highlights
+
+- Prefix and cross-attention bridges share a learnable gate, letting HRM conditioning blend with a null memory dynamically.
+- One-step gradient approximation keeps HRM memory usage tractable; deep supervision and a light halting regularizer can be toggled in the config.
+- The training loop exposes early-stop-on-eval-patience, bf16/FP16 autocast, gradient clipping, checkpoint rotation, and best-model tracking.
+- Utility scripts (`chunk_text_dataset.py`, `prepare_language_dataset.py`) cover raw-text chunking and triple-format conversion for large corpora like Wikipedia.
 
 ```mermaid
 flowchart LR
@@ -57,4 +64,4 @@ python -m hrm_lm.training.train --dry_run 1
 
 ## Training Reference
 
-For detailed training instructions, dataset formatting, and CLI parameter descriptions, see [`TRAINING.md`](TRAINING.md).
+For detailed training instructions, dataset formatting (including the chunk→prepare workflow), and CLI parameter descriptions, see [`TRAINING.md`](TRAINING.md).
