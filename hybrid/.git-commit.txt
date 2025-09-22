@@ -1,4 +1,5 @@
-Allow new halting head when loading Stage B checkpoints
+Expose sampling controls and add Stage B config
 
-- load checkpoints with strict=False and log missing/unexpected keys so new modules (halt head) initialize cleanly
-- record the change in llm.state and validate via python -m compileall
+- add --temperature/--top_p options to hrm_lm.inference.generate and implement nucleus sampling
+- create src/hrm_lm/configs/stage_b.yaml for reasoning curriculum (halting on, deep supervision off)
+- log the update in llm.state

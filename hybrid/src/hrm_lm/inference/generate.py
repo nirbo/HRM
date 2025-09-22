@@ -74,8 +74,27 @@ def load_artifact_tokenizer(checkpoint_dir: Optional[Path]):
 
 
 
+def _sample_next_token(logits: torch.Tensor, temperature: float, top_p: float) -> torch.Tensor:
+  if temperature <= 0:
+    temperature = 1e-5  # prevent divide-by-zero
+  logits = logits / temperature
+  probs = torch.softmax(logits, dim=-1)
+  if top_p < 1.0:
+    sorted_probs, sorted_indices = torch.sort(probs, descending=True)
+    cumulative = torch.cumsum(sorted_probs, dim=-1)
+    mask = cumulative > top_p
+    mask[..., 0] = False
+    sorted_probs[mask] = 0.0
+    sorted_probs = sorted_probs / sorted_probs.sum(dim=-1, keepdim=True)
+    next_token = torch.multinomial(sorted_probs, num_samples=1)
+    next_token = sorted_indices.gather(-1, next_token)
+  else:
+    next_token = torch.multinomial(probs, num_samples=1)
+  return next_token
+
+
 @torch.no_grad()  # disable grad for inference
-def generate(model: HRMLanguageModel, tokenizer, prompt: str, max_new_tokens: int = 64, device: str = 'cpu') -> str:
+def generate(model: HRMLanguageModel, tokenizer, prompt: str, max_new_tokens: int = 64, device: str = 'cpu', temperature: float = 1.0, top_p: float = 1.0) -> str:
   model.eval()  # switch to eval mode
   dev = torch.device(device)  # normalize device handle
   prompt_ids = tokenizer.encode(prompt, add_specials=True)  # encode prompt once (with specials)
@@ -96,7 +115,7 @@ def generate(model: HRMLanguageModel, tokenizer, prompt: str, max_new_tokens: in
     dec_mask = (dec != pad).long()  # decoder mask
     out = model(enc, dec, enc_attn_mask=enc_mask, dec_attn_mask=dec_mask)  # forward pass
     logits = out['logits'][:, -1, :]  # get last-step logits
-    next_token = torch.argmax(logits, dim=-1, keepdim=True)  # greedy choice
+    next_token = _sample_next_token(logits, temperature=temperature, top_p=top_p)  # stochastic choice
     dec = torch.cat([dec, next_token], dim=1)  # append token
     if int(next_token.item()) == eos:  # stop at EOS
       break  # exit loop
@@ -119,6 +138,8 @@ def main() -> None:
   ap.add_argument('--device', default=DEFAULT_DEVICE, help='Torch device for inference (defaults to GPU when available)')  # device selection
   ap.add_argument('--dataset', default='synthetic', help='Tokenizer source hint (synthetic|auto|none)')  # tokenizer source
   ap.add_argument('--max_new_tokens', type=int, default=64, help='Maximum tokens to decode')  # generation length
+  ap.add_argument('--temperature', type=float, default=1.0, help='Softmax temperature for sampling (default: 1.0)')
+  ap.add_argument('--top_p', type=float, default=1.0, help='Top-p nucleus sampling threshold (default: 1.0 = disabled)')
   args = ap.parse_args()  # parse CLI args
 
   dataset_hint = (args.dataset or 'auto').lower()  # normalize dataset hint
@@ -148,7 +169,15 @@ def main() -> None:
     tokenizer.fit([args.prompt])  # build minimal vocabulary from prompt
 
   device_str = str(device)  # stringify device for generator helper
-  text = generate(model, tokenizer, args.prompt, max_new_tokens=args.max_new_tokens, device=device_str)  # run generation
+  text = generate(
+    model,
+    tokenizer,
+    args.prompt,
+    max_new_tokens=args.max_new_tokens,
+    device=device_str,
+    temperature=args.temperature,
+    top_p=args.top_p,
+  )  # run generation
   print(text)  # emit result
 
 
