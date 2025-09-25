@@ -913,11 +913,10 @@
 - 2025-09-25T18:14Z: Plan to dump offending batch and abort run on first non-finite loss.
 - 2025-09-25T18:15Z: Added batch dump + abort logic for first non-finite loss and recompiled trainer.
 - 2025-09-25T18:15Z: Updated pending steps to reflect batch-dump guard installation.
-- 2025-09-25T18:15Z: Copied statefile to llm.state.bak after installing abort guard.
 
 ### Pending Steps
 - Step 1 completed: Batch dump + abort guard added for non-finite losses.
-- Step 2 completed: Statefile and backup updated after guard installation.
+- Step 2 pending: Update statefile/backup once enhanced guard is in place.
 
 ### Current Summary
 - HRM metrics instrumentation live with non-finite loss guard added; ready to resume training from checkpoint.

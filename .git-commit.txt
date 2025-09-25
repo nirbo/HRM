@@ -1,0 +1,5 @@
+Log HRM gate/halting metrics during training
+
+- Teach `HRMLanguageModel.forward` to emit gate statistics plus halting mass summaries so downstream tooling can observe HRM behavior without extra hooks.
+- Extend the trainer step logger to print the new metrics (with color-coded ranges) alongside loss/grad/LR for quick visual inspection.
+- Document the instrumentation in `hybrid/llm.state` and refresh the backup to keep experiment logs and changes in sync.
