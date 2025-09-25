@@ -22,6 +22,7 @@ model:
     out_dim: 512
     use_halting: true
     halting_weight: 0.002
+    halting_target: 1.0
     deep_supervision: false
     ds_weight: 0.0
 bridge:
