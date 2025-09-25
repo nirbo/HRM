@@ -37,7 +37,7 @@ class HRMLanguageModel(nn.Module):
       aux = None  # normalize aux when unused
     gate_raw = self.hrm_gate(z)  # compute gating signal before scaling.
     gate = (self.gate_scale * gate_raw).view(-1, 1, 1)  # apply warmup scaling and broadcast gate.
-    gate_strength = gate.mean().detach()  # capture aggregate gate openness without backpropagating
+    gate_strength = gate_raw.mean().detach()  # capture gate openness without suppressing warmup supervision
     if self.bridge_type == 'prefix':
       mem_hrm = self.hrm2dec(z)  # project HRM latent to prefix tokens
       mem_base = torch.zeros_like(mem_hrm)  # baseline memory
@@ -55,8 +55,7 @@ class HRMLanguageModel(nn.Module):
         summed = halt_stack.sum(dim=0)  # sum cycle probabilities
         target = torch.full_like(summed, float(self.halting_target))  # build target tensor
         halt_reg = ((summed - target) ** 2).mean()  # compute regularizer
-        effective_weight = self.halting_weight * gate_strength  # down-weight halting penalty while gate is closed
-        loss = loss + effective_weight * halt_reg  # add weighted halting loss
+        loss = loss + (self.halting_weight * gate_strength) * halt_reg  # gate halting loss without disabling warmup supervision
       if self.deep_supervision and aux is not None and 'z_per_cycle' in aux and len(aux['z_per_cycle']) > 1:
         ds_losses = []  # collect deep supervision losses
         for z_cycle in aux['z_per_cycle'][:-1]:

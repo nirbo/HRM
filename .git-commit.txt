@@ -1,6 +1,5 @@
-Stabilize HRM halting dynamics and Mamba encoder path
+Keep halting regularizer active during gate warmup
 
-- Hardened the Mamba2 encoder by wrapping each state-space layer with residual connections, LayerNorm, and padding-aware masking so CLS statistics no longer explode when batches include padding.
-- Updated the language encoder to average only unpadded tokens for its summary vector, keeping gradients smooth when the HRM core consumes CLS states regardless of backend.
-- Let the HRM recurrent core retain gradients across all cycles whenever halting is enabled, while gating the halting regularizer by the bridge openness so the loss stays inactive during warmup.
-- Defaulted halting targets to an attainable value of 1.0 in shared configs and captured the full implementation log in llm.state along with compileall validation notes.
+- Scale the halting penalty by the raw gate mean so warmup no longer zeroes the objective when the trainer clamps `gate_scale`, preserving steady supervision for the halting head.
+- Recomputed the halting-loss weighting path, verified syntax with `python -m compileall hybrid/src/hrm_lm/models/hybrid.py`, and documented the workflow extensively in `hybrid/llm.state`.
+- Resolved PR branch conflicts, refreshed the statefile audit trail, and staged the halting fix for push back to `codex/review-hybrid-branch-for-training-anomalies`.
