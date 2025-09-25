@@ -38,6 +38,11 @@ class HRMLanguageModel(nn.Module):
     gate_raw = self.hrm_gate(z)  # compute gating signal before scaling.
     gate = (self.gate_scale * gate_raw).view(-1, 1, 1)  # apply warmup scaling and broadcast gate.
     gate_strength = gate_raw.mean().detach()  # capture gate openness without suppressing warmup supervision
+    metrics = {
+      'gate_mean': gate_strength.item(),
+      'gate_min': gate_raw.min().detach().item(),
+      'gate_max': gate_raw.max().detach().item(),
+    }  # expose gate statistics for logging/monitoring
     if self.bridge_type == 'prefix':
       mem_hrm = self.hrm2dec(z)  # project HRM latent to prefix tokens
       mem_base = torch.zeros_like(mem_hrm)  # baseline memory
@@ -53,6 +58,13 @@ class HRMLanguageModel(nn.Module):
       if self.halting_weight > 0 and aux is not None and 'halt' in aux and aux['halt']:
         halt_stack = torch.stack(aux['halt'], dim=0).squeeze(-1)  # stack halting probabilities
         summed = halt_stack.sum(dim=0)  # sum cycle probabilities
+        metrics.update({
+          'halt_sum_mean': summed.mean().detach().item(),
+          'halt_sum_min': summed.min().detach().item(),
+          'halt_sum_max': summed.max().detach().item(),
+          'halt_cycle_mean': halt_stack.mean().detach().item(),
+          'halt_target': float(self.halting_target),
+        })  # surface halting distribution characteristics
         target = torch.full_like(summed, float(self.halting_target))  # build target tensor
         halt_reg = ((summed - target) ** 2).mean()  # compute regularizer
         loss = loss + (self.halting_weight * gate_strength) * halt_reg  # gate halting loss without disabling warmup supervision
@@ -65,4 +77,4 @@ class HRMLanguageModel(nn.Module):
           ds_losses.append(ce_cycle)  # store loss
         if ds_losses and self.ds_weight > 0:
           loss = loss + self.ds_weight * torch.stack(ds_losses).mean()  # add averaged DS loss
-    return {'logits': logits, 'loss': loss}
+    return {'logits': logits, 'loss': loss, 'metrics': metrics}

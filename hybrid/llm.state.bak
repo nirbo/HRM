@@ -899,15 +899,28 @@
 - 2025-09-25T18:06Z: Forced pushed amended commit to origin to keep PR branch updated.
 - 2025-09-25T18:07Z: Synced statefile backup after final logging pass to keep commit artifacts aligned.
 - 2025-09-25T18:07Z: Staging statefile/backup ahead of last amend + force-push cycle to satisfy clean-tree request.
+- 2025-09-25T18:07Z: Defined new plan steps to add HRM gate/halting metrics logging and visualization.
+- 2025-09-25T18:07Z: Added gate/halting metrics instrumentation to HRMLanguageModel forward path.
+- 2025-09-25T18:07Z: Extended trainer step logging to display gate/halting metrics.
+- 2025-09-25T18:08Z: Ran `python -m compileall` on updated hybrid model and trainer modules.
+- 2025-09-25T18:08Z: Synced `hybrid/llm.state.bak` after instrumentation updates.
+- 2025-09-25T18:08Z: Committed HRM metrics instrumentation (`git commit -m "Log HRM gate and halting metrics"`).
+- 2025-09-25T18:08Z: Pushed metrics logging commit to origin/codex/review-hybrid-branch-for-training-anomalies.
+- 2025-09-25T18:11Z: User observed NaNs; planning to add non-finite loss guard before resuming from checkpoint.
+- 2025-09-25T18:11Z: Added non-finite loss guard to training loop and compiled updated trainer.
+- 2025-09-25T18:11Z: Synced statefile backup after inserting non-finite loss guard.
+- 2025-09-25T18:12Z: Updated current summary after adding non-finite guard and pushing commit.
+- 2025-09-25T18:14Z: Plan to dump offending batch and abort run on first non-finite loss.
+- 2025-09-25T18:15Z: Added batch dump + abort logic for first non-finite loss and recompiled trainer.
+- 2025-09-25T18:15Z: Updated pending steps to reflect batch-dump guard installation.
 
 ### Pending Steps
-- Step 1 completed: Default config validated.
-- Step 2 completed: Files staged and commit summary updated.
-- Step 3 completed: Commit and push landed on origin.
-- Step 4 completed: Statefile updated with verification notes.
+- Step 1 completed: Batch dump + abort guard added for non-finite losses.
+- Step 2 pending: Update statefile/backup once enhanced guard is in place.
 
 ### Current Summary
-- Halting-loss gating fix committed and pushed to PR branch; preparing final verification and report.
+- HRM metrics instrumentation live with non-finite loss guard added; ready to resume training from checkpoint.
+
 
 ### Open Issues
 - None; ready to report findings to user.

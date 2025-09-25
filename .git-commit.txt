@@ -1,5 +1,5 @@
-Enable halting by default in configs
+Log HRM gate/halting metrics during training
 
-- Switch `use_halting` to true in `configs/default.yaml` so fresh runs exercise the stabilized halting pathway without manual overrides.
-- Captured the follow-up workflow in `hybrid/llm.state`, including config verification and branch housekeeping steps.
-- Added the latest statefile backup to keep session history synced with the repository log.
+- Teach `HRMLanguageModel.forward` to emit gate statistics plus halting mass summaries so downstream tooling can observe HRM behavior without extra hooks.
+- Extend the trainer step logger to print the new metrics (with color-coded ranges) alongside loss/grad/LR for quick visual inspection.
+- Document the instrumentation in `hybrid/llm.state` and refresh the backup to keep experiment logs and changes in sync.
