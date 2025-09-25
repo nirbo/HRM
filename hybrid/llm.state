@@ -914,13 +914,19 @@
 - 2025-09-25T18:15Z: Added batch dump + abort logic for first non-finite loss and recompiled trainer.
 - 2025-09-25T18:15Z: Updated pending steps to reflect batch-dump guard installation.
 - 2025-09-25T18:15Z: Copied statefile to llm.state.bak after installing abort guard.
+- 2025-09-25T18:15Z: Updated summary to note abort-on-nonfinite behavior.
+- 2025-09-25T18:20Z: Investigating nan_batch_step_001314.pt to locate root cause of non-finite loss.
+- 2025-09-25T18:23Z: Best-model forward pass on saved batch stayed finite; proceeding to enable anomaly detection during training resume to capture root cause.
+- 2025-09-25T18:24Z: Added --detect_anomaly flag to trainer and compiled changes.
+- 2025-09-25T18:29Z: Need guard to dump model/optimizer state in addition to batch.
+- 2025-09-25T18:30Z: Guard now dumps model/optimizer state alongside batch before abort.
 
 ### Pending Steps
-- Step 1 completed: Batch dump + abort guard added for non-finite losses.
-- Step 2 completed: Statefile and backup updated after guard installation.
+- Step 1 pending: Extend guard to dump model/optimizer state along with batch.
+- Step 2 pending: Summarize root cause and next actions once guard enhanced.
 
 ### Current Summary
-- HRM metrics instrumentation live with non-finite loss guard added; ready to resume training from checkpoint.
+- HRM metrics logging live and trainer now aborts/dumps offending batches on first non-finite loss.
 
 
 ### Open Issues

@@ -434,6 +434,7 @@ def main():
   parser.add_argument('--patience_grace_steps', type=int, default=0, help='Minimum global step before early-stop patience tracking activates.')  # Delay patience tracking until the model leaves initial transients.
   parser.add_argument('--save_dir', default=None)
   parser.add_argument('--mixed_precision', default='none')
+  parser.add_argument('--detect_anomaly', action='store_true', help='Enable torch.autograd anomaly detection (slow).')
   parser.add_argument('--grad_clip', type=float, default=0.0)
   parser.add_argument('--checkpoint_limit', type=int, default=0)
   parser.add_argument('--run_name', default=None)
@@ -459,6 +460,9 @@ def main():
   set_seed(cfg.train.seed)
 
   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+  if args.detect_anomaly:
+    torch.autograd.set_detect_anomaly(True)
+    console.print('[bold yellow]Autograd anomaly detection enabled (slow).[/bold yellow]')
   effective_batch_size = args.batch_size if args.batch_size is not None else cfg.train.batch_size
   if effective_batch_size <= 0:
     raise ValueError('batch size must be positive')
@@ -668,7 +672,8 @@ def main():
           loss = out['loss']
         metrics = out.get('metrics', {}) if isinstance(out, dict) else {}  # capture gate/halting stats when provided
         if not torch.isfinite(loss):  # Guard against NaN/Inf losses before they corrupt weights.
-          dump_path = save_dir / f'nan_batch_step_{global_step:06d}.pt'
+          base_dir = save_dir if save_dir is not None else Path('.')
+          batch_path = base_dir / f'nan_batch_step_{global_step:06d}.pt'
           payload = {
             'step': global_step,
             'loss': loss.detach().cpu(),
@@ -680,8 +685,14 @@ def main():
             'metrics': metrics,
             'lr': current_lr,
           }
-          torch.save(payload, dump_path)
-          message = f"Non-finite loss detected at step {global_step}; wrote offending batch to {dump_path}."
+          torch.save(payload, batch_path)
+          model_path = base_dir / f'nan_model_step_{global_step:06d}.pt'
+          torch.save(model.state_dict(), model_path)
+          optim_payload = {'optimizer': optimizer.state_dict()}
+          if scaler is not None and scaler.is_enabled():
+            optim_payload['scaler'] = scaler.state_dict()
+          torch.save(optim_payload, base_dir / f'nan_optimizer_step_{global_step:06d}.pt')
+          message = f"Non-finite loss detected at step {global_step}; wrote artifacts to {base_dir}."
           console.print(f'[bold red]{message}[/bold red]')
           raise RuntimeError(message)
         if scaler is not None and scaler.is_enabled():
