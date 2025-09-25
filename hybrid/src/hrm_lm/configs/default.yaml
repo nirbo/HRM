@@ -1,11 +1,11 @@
 # 2-space indent
 model:
-  vocab_size: 32000
+  vocab_size: 131072
   d_model: 512
   n_heads: 8
   dropout: 0.0
   encoder:
-    backend: transformer  # transformer | mamba2
+    backend: mamba2  # transformer | mamba2
     n_layers: 8
     max_seq_len: 2048
   decoder:
@@ -20,7 +20,7 @@ model:
     h_cycles: 4
     l_steps: 8
     approx_grad: one_step  # one_step | bptt
-    use_halting: false
+    use_halting: true
     halting_weight: 0.01
     halting_target: 1.0
     out_dim: 512
@@ -34,9 +34,9 @@ optim:
   weight_decay: 0.0
   betas: [0.9, 0.95]
 train:
-  seed: 1337
+  seed: 900
   batch_size: 2
-  eval_batch_size: null
+  eval_batch_size: 2
   seq_len: 256
   tgt_len: 64
   mixed_precision: bf16

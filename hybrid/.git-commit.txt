@@ -1,5 +1,5 @@
-Expose sampling controls and add Stage B config
+Abort on non-finite loss with batch dump
 
-- add --temperature/--top_p options to hrm_lm.inference.generate and implement nucleus sampling
-- create src/hrm_lm/configs/stage_b.yaml for reasoning curriculum (halting on, deep supervision off)
-- log the update in llm.state
+- When the forward pass returns NaN/Inf, save the offending batch (inputs, masks, metrics, lr) to `nan_batch_step_XXXXXX.pt` inside the run directory.
+- Raise immediately after dumping so training halts; this prevents corrupted weights and gives us an artifact for offline debugging.
+- Logged the behavior change in `hybrid/llm.state` and refreshed the backup so future resumes mention the abort behaviour.

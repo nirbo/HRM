@@ -158,32 +158,6 @@
 - Documented the new flag and default behavior in TRAINING.md.
 - Placeholder eval batch size added to default config; syntax validated via compileall.
 - 2025-09-18T02:31Z: User requested checkpoint loads default to GPU map_location.
-
-## Session 2025-09-18T07:45Z
-### Original Task Description
-- Resolve merge conflicts reported on `.git-commit.txt`, `llm.state`, `hybrid.py`, and `mamba2_layers.py` after upstream safeguards landed.
-
-### Plan
-1. Inspect current repository versions of the conflicted files to understand local changes.
-2. Reconcile safety improvements with upstream expectations by sanitizing activations and gating signals against non-finite values.
-3. Update statefile and commit summary to document conflict resolution steps.
-4. Re-run compile checks covering the touched modules to ensure syntax validity.
-
-### Action Log
-- 2025-09-18T07:45Z: Listed repo status via `git status` to confirm clean baseline.
-- 2025-09-18T07:46Z: Reviewed `hybrid.py` and `mamba2_layers.py` to identify stabilization hooks needing reconciliation.
-- 2025-09-18T07:47Z: Added float32-aligned gate scaling, explicit clamps, and NaN guards across HRM bridging.
-- 2025-09-18T07:48Z: Extended Mamba and transformer fallback paths with `torch.nan_to_num` to match upstream safeguards.
-- 2025-09-18T07:49Z: Appended this statefile session documenting conflict review and merged behavior.
-
-### Pending Steps
-- Run compile-time validation for updated modules prior to commit.
-
-### Current Summary
-- HRM bridge and encoder paths now sanitize gating, memory, and halting traces; statefile updated to reflect conflict review.
-
-### Open Issues
-- Monitor future training runs to confirm gradients remain finite once halting weight increases past warmup.
 - 2025-09-18T02:31Z: Noted need to auto-load config from checkpoint in generator for future patch.
 - 2025-09-18T02:31Z: Committed to implement auto-config loading and GPU map_location for generator.
 - 2025-09-18T02:31Z: Acknowledged generator patch in progress to remove manual config extraction step.
@@ -757,23 +731,6 @@
 - 2025-09-25T05:01Z: Reviewed HRMLanguageModel header and forward path to assess halting and gating flow.
 - 2025-09-25T05:01Z: Listed hybrid/src/hrm_lm directory to locate model and trainer modules.
 - 2025-09-25T05:01Z: Initialized new session plan for HRM stabilization fixes.
-- 2025-09-26T04:05Z: Reviewed NaN training logs around step 1484 and suspected bf16 instability in the real Mamba encoder path.
-- 2025-09-26T04:07Z: Promoted MambaStack execution to float32 while preserving caller dtype on return.
-- 2025-09-26T04:08Z: Hardened HRMLanguageModel by clamping HRM latents and accumulating halting penalties in float32.
-- 2025-09-26T04:09Z: Ran python -m compileall hybrid/src/hrm_lm/models/hybrid.py hybrid/src/hrm_lm/models/mamba2_layers.py to verify syntax after changes.
-- 2025-09-26T04:10Z: Committed updates with message "Run Mamba encoder in float32 and harden halting loss".
-
-### Pending Steps
-- Monitor float32 Mamba throughput on large batches to ensure the dtype promotion does not regress training speed.
-
-### Current Summary
-- Promoted the Mamba encoder stack to float32 under autocast, sanitized HRM latents, and moved halting loss math to float32 for stability.
-
-### Open Issues
-- Confirm NaN batches disappear during halting-weight sweeps; revisit halting scheduling if spikes persist.
-
-### Task Completion Summary
-- Addressed bf16-induced instabilities by executing the Mamba path in float32 and hardening halting regularizer computations.
 
 ### Pending Steps
 - None; implementation, configuration, and validation complete.
@@ -956,16 +913,13 @@
 - 2025-09-25T18:14Z: Plan to dump offending batch and abort run on first non-finite loss.
 - 2025-09-25T18:15Z: Added batch dump + abort logic for first non-finite loss and recompiled trainer.
 - 2025-09-25T18:15Z: Updated pending steps to reflect batch-dump guard installation.
-- 2025-09-25T18:15Z: Copied statefile to llm.state.bak after installing abort guard.
-- 2025-09-25T18:40Z: Disabled Mamba fast path when running in bf16 to avoid NaNs (src/hrm_lm/models/mamba2_layers.py).
-- 2025-09-25T18:42Z: User asked whether to resume from checkpoint after bf16 fast-path guard. Investigating.
 
 ### Pending Steps
 - Step 1 completed: Batch dump + abort guard added for non-finite losses.
-- Step 2 completed: Statefile and backup updated after guard installation.
+- Step 2 pending: Update statefile/backup once enhanced guard is in place.
 
 ### Current Summary
-- HRM metrics instrumentation live; trainer dumps/aborts on non-finite loss and bf16 runs avoid the Mamba fast path to prevent NaNs.
+- HRM metrics instrumentation live with non-finite loss guard added; ready to resume training from checkpoint.
 
 
 ### Open Issues

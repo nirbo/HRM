@@ -657,6 +657,8 @@ def main():
 
     attempt = 0
     raw_grad_norm = 0.0
+    metrics = {}  # track optional HRM diagnostics from the forward pass
+    skip_step = False  # flag batches that produce non-finite loss so we can skip safely
     while True:
       optimizer.zero_grad(set_to_none=True)
       ctx = torch.autocast(**autocast_kwargs) if autocast_kwargs else contextlib.nullcontext()
@@ -664,6 +666,24 @@ def main():
         with ctx:
           out = model(enc, dec_in, enc_attn_mask=enc_mask, dec_attn_mask=dec_mask, labels=labels)
           loss = out['loss']
+        metrics = out.get('metrics', {}) if isinstance(out, dict) else {}  # capture gate/halting stats when provided
+        if not torch.isfinite(loss):  # Guard against NaN/Inf losses before they corrupt weights.
+          dump_path = save_dir / f'nan_batch_step_{global_step:06d}.pt'
+          payload = {
+            'step': global_step,
+            'loss': loss.detach().cpu(),
+            'enc': enc.detach().cpu(),
+            'dec_in': dec_in.detach().cpu(),
+            'labels': labels.detach().cpu(),
+            'enc_mask': enc_mask.detach().cpu(),
+            'dec_mask': dec_mask.detach().cpu(),
+            'metrics': metrics,
+            'lr': current_lr,
+          }
+          torch.save(payload, dump_path)
+          message = f"Non-finite loss detected at step {global_step}; wrote offending batch to {dump_path}."
+          console.print(f'[bold red]{message}[/bold red]')
+          raise RuntimeError(message)
         if scaler is not None and scaler.is_enabled():
           scaler.scale(loss).backward()
           scaler.unscale_(optimizer)
@@ -728,6 +748,18 @@ def main():
         f'[orchid]eta {eta}[/orchid]',
         f'[medium_spring_green]{speed}[/medium_spring_green]',
       ]
+      gate_mean = metrics.get('gate_mean') if isinstance(metrics, dict) else None
+      if gate_mean is not None:
+        gate_min = metrics.get('gate_min', gate_mean)
+        gate_max = metrics.get('gate_max', gate_mean)
+        parts.append(f'[sky_blue2]gate μ{gate_mean:.3f} [{gate_min:.3f},{gate_max:.3f}]')
+      halt_mean = metrics.get('halt_sum_mean') if isinstance(metrics, dict) else None
+      if halt_mean is not None:
+        halt_target = metrics.get('halt_target')
+        if halt_target is not None:
+          parts.append(f'[plum4]halt Σ {halt_mean:.3f}/{halt_target:.2f}')
+        else:
+          parts.append(f'[plum4]halt Σ {halt_mean:.3f}')
       console.print(' | '.join(parts), soft_wrap=False, overflow='crop')
 
     if args.val_every > 0 and global_step % args.val_every == 0:
