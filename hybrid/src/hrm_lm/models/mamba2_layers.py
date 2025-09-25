@@ -28,16 +28,17 @@ class MambaStack(nn.Module):
         x = x * keep  # zero padded tokens before entering the state space layers
       for layer in self.mamba:  # iterate through each Mamba layer
         residual = x  # capture pre-layer activations for residual connection
-        updated = layer(x)  # run the recurrent state space update
+        updated = torch.nan_to_num(layer(x))  # run the recurrent state space update and sanitize output
         if mask is not None:  # respect padding semantics immediately after each layer
           updated = updated * mask  # suppress activations originating from padded positions
-        x = residual + updated  # apply residual addition to mirror transformer scaffolding
-      x = self.post_norm(x)  # normalize final activations for consistent scaling
+        x = torch.nan_to_num(residual + updated)  # apply residual addition to mirror transformer scaffolding
+      x = torch.nan_to_num(self.post_norm(x))  # normalize final activations for consistent scaling
       if mask is not None:  # enforce mask after normalization as well
         x = x * mask  # zero any lingering padded activations
       if x.dtype != original_dtype:  # restore caller dtype on the way out when autocast had downcast inputs
         x = x.to(original_dtype)  # convert back to the requested dtype for downstream modules
-      return x  # return masked, normalized sequence representations
+      return torch.nan_to_num(x)  # return masked, normalized sequence representations
     else:
       out = self.enc(x, src_key_padding_mask=key_padding_mask)  # delegate to transformer fallback with built-in masking
-      return self.post_norm(out)  # normalize to match interface with Mamba path
+      out = torch.nan_to_num(out)  # guard fallback activations against NaNs/Infs
+      return torch.nan_to_num(self.post_norm(out))  # normalize to match interface with Mamba path

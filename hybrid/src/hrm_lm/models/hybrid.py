@@ -36,28 +36,33 @@ class HRMLanguageModel(nn.Module):
     z = torch.nan_to_num(z)  # clamp latent activations in case upstream recurrence produced non-finite values
     if not need_aux:
       aux = None  # normalize aux when unused
-    gate_raw = self.hrm_gate(z)  # compute gating signal before scaling.
-    gate = (self.gate_scale * gate_raw).view(-1, 1, 1)  # apply warmup scaling and broadcast gate.
-    gate_strength = gate.mean().detach().to(torch.float32)  # capture aggregate gate openness without backpropagating in float32
+    gate_scale = self.gate_scale.to(dtype=z.dtype, device=z.device)  # align buffer dtype/device with activations
+    gate_raw = torch.nan_to_num(self.hrm_gate(z), nan=0.0, posinf=1.0, neginf=0.0)  # compute gating signal and sanitize
+    gate = (gate_scale * gate_raw).view(-1, 1, 1)  # apply warmup scaling and broadcast gate.
+    gate = torch.clamp(gate, 0.0, 1.0)  # enforce valid interpolation weights
+    gate_strength = gate.mean().detach().to(torch.float32).clamp_(0.0, 1.0)  # capture aggregate gate openness in float32
     if self.bridge_type == 'prefix':
-      mem_hrm = self.hrm2dec(z)  # project HRM latent to prefix tokens
+      mem_hrm = torch.nan_to_num(self.hrm2dec(z))  # project HRM latent to prefix tokens and sanitize
       mem_base = torch.zeros_like(mem_hrm)  # baseline memory
       mem = (1 - gate) * mem_base + gate * mem_hrm  # blend memories
     else:
-      mem_hrm = self.hrm2dec(z)  # project HRM latent to cross-attention memory
+      mem_hrm = torch.nan_to_num(self.hrm2dec(z))  # project HRM latent to cross-attention memory and sanitize
       mem_base = torch.zeros_like(mem_hrm)  # baseline memory
       mem = (1 - gate) * mem_base + gate * mem_hrm  # blend memories
+    mem = torch.nan_to_num(mem)  # ensure decoder memory stays finite
     logits = self.decoder(decoder_input_ids, mem, attention_mask=dec_attn_mask, memory_mask=None)
     loss = None
     if labels is not None:
       loss = torch.nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-100)  # compute CE loss
       if self.halting_weight > 0 and aux is not None and 'halt' in aux and aux['halt']:
         halt_stack = torch.stack(aux['halt'], dim=0).squeeze(-1).to(torch.float32)  # stack halting probabilities in float32
+        halt_stack = torch.nan_to_num(halt_stack)  # guard against numerical overflow in halting traces
         summed = halt_stack.sum(dim=0)  # sum cycle probabilities
         target = torch.full_like(summed, float(self.halting_target))  # build target tensor
         halt_reg = ((summed - target) ** 2).mean()  # compute regularizer
-        effective_weight = torch.tensor(self.halting_weight, dtype=torch.float32, device=halt_reg.device) * gate_strength  # scale penalty using float32 math
-        loss = loss + effective_weight * halt_reg  # add weighted halting loss
+        if torch.isfinite(halt_reg):  # only apply finite penalties
+          effective_weight = torch.tensor(self.halting_weight, dtype=torch.float32, device=halt_reg.device) * gate_strength  # scale penalty using float32 math
+          loss = loss + effective_weight * halt_reg  # add weighted halting loss
       if self.deep_supervision and aux is not None and 'z_per_cycle' in aux and len(aux['z_per_cycle']) > 1:
         ds_losses = []  # collect deep supervision losses
         for z_cycle in aux['z_per_cycle'][:-1]:
