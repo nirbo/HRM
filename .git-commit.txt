@@ -1,5 +1,5 @@
-Keep halting regularizer active during gate warmup
+Enable halting by default in configs
 
-- Scale the halting penalty by the raw gate mean so warmup no longer zeroes the objective when the trainer clamps `gate_scale`, preserving steady supervision for the halting head.
-- Recomputed the halting-loss weighting path, verified syntax with `python -m compileall hybrid/src/hrm_lm/models/hybrid.py`, and documented the workflow extensively in `hybrid/llm.state`.
-- Resolved PR branch conflicts, refreshed the statefile audit trail, and staged the halting fix for push back to `codex/review-hybrid-branch-for-training-anomalies`.
+- Switch `use_halting` to true in `configs/default.yaml` so fresh runs exercise the stabilized halting pathway without manual overrides.
+- Captured the follow-up workflow in `hybrid/llm.state`, including config verification and branch housekeeping steps.
+- Added the latest statefile backup to keep session history synced with the repository log.
