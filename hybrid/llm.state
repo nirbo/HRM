@@ -914,13 +914,15 @@
 - 2025-09-25T18:15Z: Added batch dump + abort logic for first non-finite loss and recompiled trainer.
 - 2025-09-25T18:15Z: Updated pending steps to reflect batch-dump guard installation.
 - 2025-09-25T18:15Z: Copied statefile to llm.state.bak after installing abort guard.
+- 2025-09-25T18:40Z: Disabled Mamba fast path when running in bf16 to avoid NaNs (src/hrm_lm/models/mamba2_layers.py).
+- 2025-09-25T18:42Z: User asked whether to resume from checkpoint after bf16 fast-path guard. Investigating.
 
 ### Pending Steps
 - Step 1 completed: Batch dump + abort guard added for non-finite losses.
 - Step 2 completed: Statefile and backup updated after guard installation.
 
 ### Current Summary
-- HRM metrics instrumentation live with non-finite loss guard added; ready to resume training from checkpoint.
+- HRM metrics instrumentation live; trainer dumps/aborts on non-finite loss and bf16 runs avoid the Mamba fast path to prevent NaNs.
 
 
 ### Open Issues

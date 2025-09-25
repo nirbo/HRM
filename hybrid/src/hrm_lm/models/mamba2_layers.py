@@ -18,17 +18,30 @@ class MambaStack(nn.Module):
 
   def forward(self, x, key_padding_mask=None):
     if self.use_mamba:  # prefer Mamba execution when kernels are available
+      use_fast_path = x.dtype != torch.bfloat16  # disable fused kernels when running in bf16 to avoid numerical instabilities
       mask = None  # default mask placeholder
       if key_padding_mask is not None:  # honor caller provided padding mask for stability
         keep = (~key_padding_mask).unsqueeze(-1).to(dtype=x.dtype)  # convert to multiplicative keep mask
         mask = keep  # cache the keep mask for reuse below
         x = x * keep  # zero padded tokens before entering the state space layers
+      original_fast_flags = None
+      if not use_fast_path:
+        original_fast_flags = []
+        for layer in self.mamba:
+          flag = getattr(layer, 'use_fast_path', None)
+          original_fast_flags.append(flag)
+          if flag is not None:
+            layer.use_fast_path = False  # fall back to PyTorch implementation in bf16
       for layer in self.mamba:  # iterate through each Mamba layer
         residual = x  # capture pre-layer activations for residual connection
         updated = layer(x)  # run the recurrent state space update
         if mask is not None:  # respect padding semantics immediately after each layer
           updated = updated * mask  # suppress activations originating from padded positions
         x = residual + updated  # apply residual addition to mirror transformer scaffolding
+      if original_fast_flags is not None:
+        for layer, flag in zip(self.mamba, original_fast_flags):
+          if flag is not None:
+            layer.use_fast_path = flag  # restore original fast-path configuration
       x = self.post_norm(x)  # normalize final activations for consistent scaling
       if mask is not None:  # enforce mask after normalization as well
         x = x * mask  # zero any lingering padded activations
