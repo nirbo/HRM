@@ -1,8 +1,8 @@
 # LM encoder (Mamba2 or Transformer)
-import torch
-import torch.nn as nn
-from .transformer_layers import PositionalEncoding, TransformerEncoder
-from .mamba2_layers import MambaStack
+import torch  # tensor ops
+import torch.nn as nn  # neural network layers
+from .transformer_layers import PositionalEncoding, TransformerEncoder  # transformer encoder building blocks
+from .mamba2_layers import MambaStack  # optional Mamba2 stack
 
 class LMEncoder(nn.Module):
   def __init__(self, vocab_size, d_model, n_layers, max_seq_len, backend='transformer'):
@@ -17,10 +17,16 @@ class LMEncoder(nn.Module):
     self.norm = nn.LayerNorm(d_model)
 
   def forward(self, input_ids, attention_mask=None):
-    x = self.tok(input_ids)
-    x = self.pos(x)
-    key_pad = (attention_mask == 0) if attention_mask is not None else None
-    h = self.enc(x, key_pad)
-    h = self.norm(h)
-    cls = h[:, 0]
-    return h, cls
+    x = self.tok(input_ids)  # embed tokens
+    x = self.pos(x)  # inject positional encoding
+    key_pad = (attention_mask == 0) if attention_mask is not None else None  # build padding mask when provided
+    h = self.enc(x, key_pad)  # encode sequence with selected backend
+    h = self.norm(h)  # normalize encoder outputs for stability
+    if key_pad is not None:  # honor padding mask when computing summary vector
+      keep = (~key_pad).unsqueeze(-1).to(h.dtype)  # convert padding mask to multiplicative keep mask
+      valid_counts = keep.sum(dim=1).clamp_min(1.0)  # count valid tokens while avoiding division by zero
+      pooled = (h * keep).sum(dim=1) / valid_counts  # average valid tokens to form a stable CLS summary
+      cls = pooled  # assign pooled representation
+    else:
+      cls = h[:, 0]  # default to first token when no padding mask exists
+    return h, cls  # expose full sequence states and CLS summary

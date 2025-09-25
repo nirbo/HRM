@@ -687,3 +687,64 @@
 - Diagnosed validation loader failure: `val.jsonl` line 3144 is truncated (missing closing brackets/newline), causing `json.loads` to raise `Expecting ',' delimiter` during `_parse_json_line`.
 - Recommended remediation: regenerate or repair the validation dataset (drop or reconstruct the malformed entry, refresh metadata) and optionally guard `_parse_json_line` with try/except to skip/log corrupt samples.
 
+
+## Session 2025-09-25T05:01Z
+### Original Task Description
+- Apply stabilization fixes for HRM halting integration per gradient explosion analysis.
+
+### Plan
+1. Review existing HRM hybrid model encoder and halting implementations to confirm previous observations.
+2. Inspect trainer halting loss scheduling to determine when penalties are active relative to gate warmup.
+3. Implement encoder normalization/masking adjustments and halting objective tweaks to reduce gradient spikes.
+4. Update trainer to defer halting regularizer until HRM gate engages and ensure configuration alignment.
+5. Document changes, update tests/configs if necessary, and verify formatting or syntax.
+
+### Action Log
+- 2025-09-25T05:07Z: Finalized session summary and pending steps after implementing stabilization fixes.
+- 2025-09-25T05:07Z: Authored .git-commit.txt describing encoder and halting stabilization updates.
+- 2025-09-25T05:07Z: Attempted git add -F .git-commit.txt (invalid flag); preparing to use -f.
+- 2025-09-25T05:07Z: Forced-added .git-commit.txt with git add -f per repo policy.
+- 2025-09-25T05:07Z: Staged encoder, HRM core, config, and state updates for commit.
+- 2025-09-25T05:07Z: Restaged llm.state after documenting git add workflow.
+- 2025-09-25T05:08Z: Committed stabilization updates with message "Stabilize HRM halting integration".
+- 2025-09-25T05:06Z: Ran python -m compileall over updated HRM model modules to verify syntax.
+- 2025-09-25T05:06Z: Cleared residual truncated word in MambaStack fallback comment after refactor.
+- 2025-09-25T05:06Z: Reflowed fallback comment in MambaStack initializer to resolve indentation error.
+- 2025-09-25T05:06Z: Removed stray truncated comment fragment from MambaStack initializer.
+- 2025-09-25T05:05Z: Removed duplicated HRMCore loop header introduced during comment repair.
+- 2025-09-25T05:05Z: Shortened MambaStack construction comment to prevent unintended line splitting.
+- 2025-09-25T05:05Z: Corrected HRMCore loop comment formatting to maintain indentation and clarity.
+- 2025-09-25T05:04Z: Synced stage_b config halting_target with new stabilized default.
+- 2025-09-25T05:04Z: Added explicit halting_target to default config for clarity with new loss scaling.
+- 2025-09-25T05:04Z: Checked default configuration to determine existing halting fields.
+- 2025-09-25T05:04Z: Scaled halting regularizer by gate openness and set attainable default target for stability.
+- 2025-09-25T05:03Z: Disabled approx_grad truncation when halting is enabled so all cycles receive gradients.
+- 2025-09-25T05:03Z: Updated LMEncoder to average unpadded tokens for CLS summary and document tensor operations.
+- 2025-09-25T05:03Z: Added residual, normalization, and mask handling to MambaStack to align with transformer path stability.
+- 2025-09-25T05:02Z: Updated pending steps to reflect transition from review to implementation planning.
+- 2025-09-25T05:02Z: Reviewed stage_b config to confirm halting defaults and approx_grad setting.
+- 2025-09-25T05:02Z: Searched source tree for halting references to map configuration touchpoints.
+- 2025-09-25T05:02Z: Reviewed training loop focusing on gate warmup handling and loss computation steps.
+- 2025-09-25T05:01Z: Began reviewing trainer script to trace halting penalty scheduling and dataset flow.
+- 2025-09-25T05:01Z: Examined HRMCore forward loop focusing on approx_grad handling and halting probability aggregation.
+- 2025-09-25T05:01Z: Inspected LMEncoder implementation to evaluate masking and normalization differences for Mamba backend.
+- 2025-09-25T05:01Z: Reviewed HRMLanguageModel header and forward path to assess halting and gating flow.
+- 2025-09-25T05:01Z: Listed hybrid/src/hrm_lm directory to locate model and trainer modules.
+- 2025-09-25T05:01Z: Initialized new session plan for HRM stabilization fixes.
+- 2025-09-26T04:05Z: Reviewed NaN training logs around step 1484 and suspected bf16 instability in the real Mamba encoder path.
+- 2025-09-26T04:07Z: Promoted MambaStack execution to float32 while preserving caller dtype on return.
+- 2025-09-26T04:08Z: Hardened HRMLanguageModel by clamping HRM latents and accumulating halting penalties in float32.
+- 2025-09-26T04:09Z: Ran python -m compileall hybrid/src/hrm_lm/models/hybrid.py hybrid/src/hrm_lm/models/mamba2_layers.py to verify syntax after changes.
+- 2025-09-26T04:10Z: Committed updates with message "Run Mamba encoder in float32 and harden halting loss".
+
+### Pending Steps
+- Monitor float32 Mamba throughput on large batches to ensure the dtype promotion does not regress training speed.
+
+### Current Summary
+- Promoted the Mamba encoder stack to float32 under autocast, sanitized HRM latents, and moved halting loss math to float32 for stability.
+
+### Open Issues
+- Confirm NaN batches disappear during halting-weight sweeps; revisit halting scheduling if spikes persist.
+
+### Task Completion Summary
+- Addressed bf16-induced instabilities by executing the Mamba path in float32 and hardening halting regularizer computations.

@@ -57,14 +57,15 @@ class HRMCore(nn.Module):
     halting_probs = []
     z_list = []
 
-    for c in range(self.h_cycles):
-      if self.approx_grad == 'one_step' and c < self.h_cycles - 1:
-        with torch.no_grad():
-          L = self._run_L(L, H, lin)
-          H = self._run_H(H, L, hin)
+    for c in range(self.h_cycles):  # iterate over high-level recurrent cycles
+      truncated = self.approx_grad == 'one_step' and c < self.h_cycles - 1 and not self.use_halting  # respect approx grad truncation only when halting is disabled
+      if truncated:  # apply gradient truncation for early cycles when allowed
+        with torch.no_grad():  # disable gradient tracking for cheaper inference-style updates
+          L = self._run_L(L, H, lin)  # advance low-level memory without gradient tracking
+          H = self._run_H(H, L, hin)  # advance high-level memory without gradient tracking
       else:
-        L = self._run_L(L, H, lin)
-        H = self._run_H(H, L, hin)
+        L = self._run_L(L, H, lin)  # run low-level memory with gradients
+        H = self._run_H(H, L, hin)  # run high-level memory with gradients
 
       z_raw = self._readout(H)  # compute raw latent
       z_norm = self.out_norm(z_raw)  # normalize latent
