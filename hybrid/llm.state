@@ -1247,13 +1247,14 @@
 - 2025-09-26T02:18Z: Recompiled rwkv6_layers.py after cleanup to confirm syntax; command succeeded.
 - 2025-09-26T02:19Z: Refreshed LMEncoder header comment to list RWKV6 backend; command succeeded.
 - 2025-09-26T02:19Z: Recompiled encoder module after header tweak; command succeeded.
+- 2025-09-26T02:49Z: User compiled RWKV CUDA kernels; commencing integration of fast backend wrapper.
+- 2025-09-26T02:58Z: Vendor-copied RWKV CUDA sources into `src/hrm_lm/models/rwkv_cuda/` for integration.
+- 2025-09-26T02:59Z: Replaced RWKV stack with CUDA-backed implementation (falls back to PyTorch loop when unavailable).
+- 2025-09-26T03:00Z: Built/loaded wkv6 extension and ran rwkv6 dry-run (loss≈11.93) using CUDA kernels.
 
 
 ### Pending Steps
-- Patch Mamba2 path to handle sub-kernel-length sequences safely.
-- Extend architecture support with RWKV-6 modules and configuration.
-- Integrate RWKV into trainer, configs, and selection logic.
-- Execute verification tests (GPU replay + RWKV smoke) and update docs/state.
+- None; plan complete.
 
 
 ### Current Summary
@@ -1269,11 +1270,13 @@
 - RWKV-6 stack module added and encoder backend selection extended.
 - GPU replay of step_003990 batch now yields finite loss (~5.18) with gate still closed, confirming padding fix.
 - RWKV-6 backend passes dry-run with finite loss, confirming integration path.
+- RWKV backend now uses fused CUDA kernels when available (fallback to PyTorch loop).
+- Verified fast path via dry-run; Mamba padding guard remains in place (GPU replay finite).
 
 
 ### Open Issues
-- Monitor long-context runs to confirm padding guard keeps Mamba loss finite when short sequences appear.
-- Benchmark RWKV-6 vs Mamba2 for throughput/memory once long-context datasets are staged.
+- Monitor long-context RWKV runs; rebuild kernels if head size or max sequence length changes.
+- Benchmark RWKV CUDA throughput vs Mamba2 on target workloads.
 
 
 ### Task Completion Summary
@@ -1281,3 +1284,5 @@
 - Identified Mamba selective-scan uses kernel width 4 (`src/hrm_lm/models/mamba2_layers.py:15`) and offending batch contains <=2-token sequences, implicating fast-path instability on short contexts.
 - Documented mitigation options (pad/drop short samples or bypass fast path) and noted GPU replay required for final confirmation.
 - Added RWKV-6 backend with CLI/config hooks and documented selection workflow; dry-run confirms integration.
+- Ported RWKV-6 time-mix layer to use BlinkDL CUDA kernels with safe PyTorch fallback; dry-run confirms fast path.
+- Vendored RWKV CUDA sources and ensured ENV build path works with PATH/TORCH_CUDA_ARCH_LIST settings.

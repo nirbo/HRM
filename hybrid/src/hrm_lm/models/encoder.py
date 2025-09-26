@@ -14,7 +14,7 @@ class LMEncoder(nn.Module):
     if backend == 'mamba2':
       self.enc = MambaStack(d_model, n_layers)
     elif backend == 'rwkv6':
-      self.enc = RWKV6Stack(d_model, n_layers)
+      self.enc = RWKV6Stack(d_model, n_layers, n_heads=8, max_seq_len=max_seq_len)
     else:
       self.enc = TransformerEncoder(d_model, n_heads=8, n_layers=n_layers, dropout=0.0)
     self.norm = nn.LayerNorm(d_model)
