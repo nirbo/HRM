@@ -11,10 +11,12 @@ class LMEncoder(nn.Module):
     self.pos = PositionalEncoding(d_model, max_len=max_seq_len)
     self.backend = backend
     encoder_cfg = encoder_cfg or {}
+    self.supports_cuda_graphs = True  # assume CUDA graph support unless a backend opts out explicitly
     self.moe_aux_weight = float(encoder_cfg.get('moe', {}).get('aux_loss_weight', 0.0))
     if backend == 'mamba2':
       self.enc = MambaStack(d_model, n_layers)
       self.moe_aux_weight = 0.0
+      self.supports_cuda_graphs = False  # custom kernels rely on dynamic control flow that is not capture safe yet
     else:
       moe_cfg = encoder_cfg.get('moe', {})
       use_moe = bool(moe_cfg.get('enabled', False))
@@ -28,6 +30,8 @@ class LMEncoder(nn.Module):
       )
       if not use_moe:
         self.moe_aux_weight = 0.0
+      else:
+        self.supports_cuda_graphs = False  # MoE routing uses data-dependent indexing that breaks CUDA graphs currently
     self.norm = nn.LayerNorm(d_model)
 
   def forward(self, input_ids, attention_mask=None):

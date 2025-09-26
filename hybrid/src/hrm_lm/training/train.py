@@ -648,119 +648,130 @@ def main():
   last_eval_loss: Optional[float] = None  # Remember the previous validation loss for comparison.
   early_stop_triggered = False  # Flag to break out of training when patience is exhausted.
 
-  for step in range(start_step, total_steps):
-    global_step = step + 1
+  def get_next_batch() -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    batch = next(iterator)
+    b_enc, b_dec_in, b_labels, b_enc_mask, b_dec_mask = batch
+    b_enc = truncate_to_max_length(b_enc, effective_seq_len).to(device)
+    b_dec_in = truncate_to_max_length(b_dec_in, effective_seq_len).to(device)
+    b_labels = truncate_to_max_length(b_labels, effective_seq_len).to(device)
+    b_enc_mask = truncate_to_max_length(b_enc_mask, effective_seq_len).to(device).bool()
+    b_dec_mask = truncate_to_max_length(b_dec_mask, effective_seq_len).to(device).bool()
+    return b_enc, b_dec_in, b_labels, b_enc_mask, b_dec_mask
+
+  def execute_step(enc, dec_in, labels, enc_mask, dec_mask, *, apply_clip: bool = True):
+    optimizer.zero_grad(set_to_none=True)
+    ctx = torch.autocast(**autocast_kwargs) if autocast_kwargs else contextlib.nullcontext()
+    with ctx:
+      out = model(enc, dec_in, enc_attn_mask=enc_mask, dec_attn_mask=dec_mask, labels=labels)
+      loss_tensor = out['loss']
+    step_metrics = out.get('metrics', {}) if isinstance(out, dict) else {}
+    if scaler is not None and scaler.is_enabled():
+      scaler.scale(loss_tensor).backward()
+      scaler.unscale_(optimizer)
+    else:
+      loss_tensor.backward()
+    if apply_clip and args.grad_clip > 0:
+      torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+    if scaler is not None and scaler.is_enabled():
+      scaler.step(optimizer)
+      scaler.update()
+    else:
+      optimizer.step()
+    return loss_tensor, step_metrics
+
+  def clone_static_buffers(batch_tensors: Tuple[torch.Tensor, ...]) -> Tuple[torch.Tensor, ...]:
+    return tuple(t.clone().detach() for t in batch_tensors)
+
+  def copy_into_static(batch_tensors: Tuple[torch.Tensor, ...], static_buffers: Tuple[torch.Tensor, ...]) -> None:
+    for src, dst in zip(batch_tensors, static_buffers):
+      dst.copy_(src)
+
+  def initialize_cuda_graph(batch_tensors: Tuple[torch.Tensor, ...]):
+    static_buffers = clone_static_buffers(batch_tensors)
+    graph = torch.cuda.CUDAGraph()
+    optimizer.zero_grad(set_to_none=True)
+    with torch.cuda.graph(graph):
+      loss_tensor, metrics_dict = execute_step(*static_buffers)
+    metrics_dict = metrics_dict if isinstance(metrics_dict, dict) else {}
+    return {
+      'graph': graph,
+      'buffers': static_buffers,
+      'loss': loss_tensor,
+      'metrics': metrics_dict,
+    }
+
+  use_cuda_graphs = bool(getattr(cfg.train, 'use_cuda_graphs', False))
+  if use_cuda_graphs and not bool(getattr(model, 'supports_cuda_graphs', True)):
+    console.print('[bold yellow]CUDA graphs disabled: current model backend does not support capture-safe execution.[/bold yellow]')
+    use_cuda_graphs = False
+  global_step = start_step
+  graphs_ready = False
+  first_step_completed = not use_cuda_graphs
+  graph_state = None
+
+  while global_step < total_steps:
+    batch_tensors = get_next_batch()
+    global_step += 1
     current_lr = adjust_lr(global_step)
 
-    if hasattr(model, 'gate_scale'):  # Adjust HRM gate scaling when the model exposes the buffer.
-      if gate_warmup > 0:  # Only apply the warmup schedule when a positive duration is configured.
-        if global_step <= gate_warmup:  # Check whether we remain inside the warmup window.
-          model.gate_scale.fill_(0.0)  # Hold the gate closed to focus on language pretraining.
-        else:  # Warmup finished so full HRM influence can flow.
-          model.gate_scale.fill_(1.0)  # Restore standard gate scaling.
-      else:  # No warmup requested, ensure gate stays fully open.
-        model.gate_scale.fill_(1.0)  # Keep HRM influence enabled when no warmup is needed.
+    if hasattr(model, 'gate_scale'):
+      if gate_warmup > 0:
+        if global_step <= gate_warmup:
+          model.gate_scale.fill_(0.0)
+        else:
+          model.gate_scale.fill_(1.0)
+      else:
+        model.gate_scale.fill_(1.0)
 
-    enc, dec_in, labels, enc_mask, dec_mask = next(iterator)
-    enc = truncate_to_max_length(enc, effective_seq_len).to(device)
-    dec_in = truncate_to_max_length(dec_in, effective_seq_len).to(device)
-    labels = truncate_to_max_length(labels, effective_seq_len).to(device)
-    enc_mask = truncate_to_max_length(enc_mask, effective_seq_len).to(device).bool()
-    dec_mask = truncate_to_max_length(dec_mask, effective_seq_len).to(device).bool()
+    if use_cuda_graphs:
+      if not first_step_completed:
+        loss_tensor, step_metrics = execute_step(*batch_tensors)
+        first_step_completed = True
+      elif not graphs_ready:
+        try:
+          graph_state = initialize_cuda_graph(batch_tensors)
+          graphs_ready = True
+          loss_tensor = graph_state['loss']
+          step_metrics = graph_state['metrics']
+        except RuntimeError as err:
+          console.print(f'[bold yellow]CUDA graph capture failed ({err}); falling back to eager execution.[/bold yellow]')
+          use_cuda_graphs = False
+          graphs_ready = False
+          graph_state = None
+          loss_tensor, step_metrics = execute_step(*batch_tensors)
+      else:
+        copy_into_static(batch_tensors, graph_state['buffers'])
+        graph_state['graph'].replay()
+        loss_tensor = graph_state['loss']
+        step_metrics = graph_state['metrics']
+    else:
+      loss_tensor, step_metrics = execute_step(*batch_tensors)
 
-    attempt = 0
-    max_retries = 3  # allow up to three retries for transient CUDA faults
-    raw_grad_norm = 0.0
-    metrics = {}  # track optional HRM diagnostics from the forward pass
-    skip_step = False  # flag batches that produce non-finite loss so we can skip safely
-    while True:
-      optimizer.zero_grad(set_to_none=True)
-      ctx = torch.autocast(**autocast_kwargs) if autocast_kwargs else contextlib.nullcontext()
-      try:
-        with ctx:
-          out = model(enc, dec_in, enc_attn_mask=enc_mask, dec_attn_mask=dec_mask, labels=labels)
-          loss = out['loss']
-        metrics = out.get('metrics', {}) if isinstance(out, dict) else {}  # capture gate/halting stats when provided
-        if not torch.isfinite(loss):  # Guard against NaN/Inf losses before they corrupt weights.
-          dump_path = save_dir / f'nan_batch_step_{global_step:06d}.pt'
-          payload = {
-            'step': global_step,
-            'loss': loss.detach().cpu(),
-            'enc': enc.detach().cpu(),
-            'dec_in': dec_in.detach().cpu(),
-            'labels': labels.detach().cpu(),
-            'enc_mask': enc_mask.detach().cpu(),
-            'dec_mask': dec_mask.detach().cpu(),
-            'metrics': metrics,
-            'lr': current_lr,
-          }
-          torch.save(payload, dump_path)
-          message = f"Non-finite loss detected at step {global_step}; wrote offending batch to {dump_path}."
-          console.print(f'[bold red]{message}[/bold red]')
-          raise RuntimeError(message)
-        if scaler is not None and scaler.is_enabled():
-          scaler.scale(loss).backward()
-          scaler.unscale_(optimizer)
-        else:
-          loss.backward()
-        if args.grad_clip > 0:
-          raw_grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
-        else:
-          raw_grad_norm = gradient_norm(model)
-        if scaler is not None and scaler.is_enabled():
-          scaler.step(optimizer)
-          scaler.update()
-        else:
-          optimizer.step()
-        break
-      except RuntimeError as exc:
-        message = str(exc).lower()
-        if ('launch timed out' in message or 'device-side assert' in message) and attempt < max_retries:
-          console.print(f'[bold red]CUDA timeout detected; retrying current step ({attempt + 1}/{max_retries}) after cache flush.[/bold red]')
-          if torch.cuda.is_available():
-            try:
-              torch.cuda.synchronize()
-            except Exception as sync_err:
-              console.print(f'[bold yellow]CUDA synchronize failed after timeout: {sync_err}; proceeding with retry without full sync.[/bold yellow]')
-            try:
-              torch.cuda.empty_cache()
-              torch.cuda.ipc_collect()
-            except torch.cuda.CudaError as cache_err:
-              console.print(f'[bold yellow]Skipping cache flush after timeout: {cache_err}[/bold yellow]')
-          time.sleep(1.0)
-          attempt += 1
-          continue
-        elif 'cublas' in message and attempt < max_retries:
-          console.print(f'[bold red]cuBLAS error detected; retrying current step ({attempt + 1}/{max_retries}) after cache flush.[/bold red]')  # surface cuBLAS faults before retry
-          if torch.cuda.is_available():
-            torch.cuda.synchronize()  # drain outstanding kernels so cuBLAS can recover
-            try:
-              torch.cuda.empty_cache()  # release allocator caches that may confuse cuBLAS
-              torch.cuda.ipc_collect()
-            except torch.cuda.CudaError as cache_err:
-              console.print(f'[bold yellow]Skipping cache flush after cuBLAS error: {cache_err}[/bold yellow]')
-          time.sleep(1.0)  # small pause gives driver time to settle
-          attempt += 1
-          continue
-        raise
+    loss_val = float(loss_tensor.item())
+    if not math.isfinite(loss_val):
+      message = f"Non-finite loss detected at step {global_step}."
+      console.print(f'[bold red]{message}[/bold red]')
+      if save_dir is not None:
+        dump_path = save_dir / f'nan_batch_step_{global_step:06d}.pt'
+        payload = {
+          'step': global_step,
+          'loss': torch.tensor(loss_val),
+          'lr': current_lr,
+        }
+        torch.save(payload, dump_path)
+        console.print(f'[bold red]Stored diagnostic payload at {dump_path}[/bold red]')
+      raise RuntimeError(message)
 
     grad_norm = gradient_norm(model)
-
     steps_completed = global_step - run_start_step
     elapsed = time.time() - run_start_time
     time_per_step = elapsed / steps_completed if steps_completed > 0 else float('inf')
     eta = format_eta(time_per_step * (total_steps - global_step))
     speed = format_speed(time_per_step)
+    metrics = step_metrics if isinstance(step_metrics, dict) else {}
+    raw_grad_norm = grad_norm
 
     if global_step % log_steps == 0 or global_step == total_steps:
-      try:
-        loss_val = loss.item()
-      except RuntimeError as exc:
-        if 'device-side assert' in str(exc) or 'launch timed out' in str(exc):
-          torch.cuda.synchronize()
-          loss_val = float('nan')
-        else:
-          raise
       parts = [
         f'[grey70]step {global_step}/{total_steps}[/grey70]',
         f'[chartreuse4]loss {loss_val:.15f}[/chartreuse4]',
@@ -769,12 +780,12 @@ def main():
         f'[orchid]eta {eta}[/orchid]',
         f'[medium_spring_green]{speed}[/medium_spring_green]',
       ]
-      gate_mean = metrics.get('gate_mean') if isinstance(metrics, dict) else None
+      gate_mean = metrics.get('gate_mean')
       if gate_mean is not None:
         gate_min = metrics.get('gate_min', gate_mean)
         gate_max = metrics.get('gate_max', gate_mean)
         parts.append(f'[sky_blue2]gate μ{gate_mean:.3f} [{gate_min:.3f},{gate_max:.3f}]')
-      halt_mean = metrics.get('halt_sum_mean') if isinstance(metrics, dict) else None
+      halt_mean = metrics.get('halt_sum_mean')
       if halt_mean is not None:
         halt_target = metrics.get('halt_target')
         if halt_target is not None:

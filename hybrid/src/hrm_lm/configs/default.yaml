@@ -49,3 +49,4 @@ train:
   tgt_len: 64
   mixed_precision: bf16
   enable_tf32: true
+  use_cuda_graphs: true

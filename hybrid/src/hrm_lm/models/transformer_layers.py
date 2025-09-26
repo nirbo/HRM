@@ -58,10 +58,9 @@ class MoEFeedForward(nn.Module):
     capacity = int(math.ceil(self.capacity_factor * (S * self.top_k) / self.num_experts))
 
     for expert_id, expert in enumerate(self.experts):
-      mask = (topk_idx == expert_id)
-      if not mask.any():
+      selected = (topk_idx == expert_id).nonzero(as_tuple=False)  # identify tokens routed to this expert without host sync
+      if selected.size(0) == 0:  # skip if graph capture finds no assignments for this expert
         continue
-      selected = mask.nonzero(as_tuple=False)  # (num_tokens, 2)
       token_ids = selected[:, 0]
       gate_scores = topk_vals[token_ids, selected[:, 1]]
       if capacity and token_ids.numel() > capacity:

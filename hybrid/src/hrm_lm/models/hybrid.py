@@ -65,6 +65,7 @@ class HRMLanguageModel(nn.Module):
     self.register_buffer(
       "gate_scale", torch.tensor(1.0, dtype=torch.float32)
     )
+    self.supports_cuda_graphs = bool(getattr(self.encoder, 'supports_cuda_graphs', True))  # expose encoder capture capability to the trainer
 
   def forward(
     self,
