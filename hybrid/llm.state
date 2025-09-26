@@ -1254,6 +1254,7 @@
 - 2025-09-26T03:06Z: Adjusted RWKV backward path to write gradients in BF16 buffers before casting, removing dtype runtime error.
 - 2025-09-26T03:57Z: User requested RWKV backend removal; preparing rollback of related code.
 - 2025-09-26T03:58Z: Removed RWKV backend files and reverted encoder/config/CLI changes per user request.
+- 2025-09-26T04:22Z: Implemented Transformer MoE layer, config plumbing, and documentation; dry-run succeeds.
 
 
 ### Pending Steps
@@ -1275,6 +1276,7 @@
 - RWKV-6 backend passes dry-run with finite loss, confirming integration path.
 - Verified fast path via dry-run; Mamba padding guard remains in place (GPU replay finite).
 - RWKV backend removed; encoder now supports transformer or mamba2 only.
+- Transformer backend now supports optional MoE FFN with configurable experts and aux loss tying into training metrics.
 
 
 ### Open Issues
@@ -1286,3 +1288,4 @@
 - Identified Mamba selective-scan uses kernel width 4 (`src/hrm_lm/models/mamba2_layers.py:15`) and offending batch contains <=2-token sequences, implicating fast-path instability on short contexts.
 - Documented mitigation options (pad/drop short samples or bypass fast path) and noted GPU replay required for final confirmation.
 - RWKV backend removed; documentation and configs now reflect transformer/mamba2 only.
+- Added Transformer MoE option with gating, config knobs, and metrics integration; verified via targeted dry-run.

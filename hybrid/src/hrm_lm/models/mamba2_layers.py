@@ -80,5 +80,7 @@ class MambaStack(nn.Module):
       return torch.nan_to_num(x)
 
     out = self.enc(x, src_key_padding_mask=key_padding_mask)
+    if isinstance(out, tuple):
+      out, _ = out
     out = torch.nan_to_num(out)
     return torch.nan_to_num(self.post_norm(out))

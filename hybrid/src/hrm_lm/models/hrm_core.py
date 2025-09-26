@@ -16,7 +16,7 @@ class HRMModule(nn.Module):
     if extra is not None:
       state = state + extra
     x = state + self.pos.unsqueeze(0)
-    x = self.block(x, src_key_padding_mask=key_padding_mask)
+    x, _ = self.block(x, src_key_padding_mask=key_padding_mask)
     return self.norm(x)
 
 class HRMCore(nn.Module):

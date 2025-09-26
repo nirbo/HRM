@@ -8,6 +8,14 @@ model:
     backend: mamba2  # transformer | mamba2
     n_layers: 8
     max_seq_len: 2048
+    moe:
+      enabled: false
+      num_experts: 4
+      top_k: 1
+      capacity_factor: 1.25
+      ff_multiplier: 4.0
+      dropout: 0.0
+      aux_loss_weight: 0.01
   decoder:
     n_layers: 8
     max_seq_len: 1024

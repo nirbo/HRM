@@ -182,6 +182,7 @@ Additional notes:
 - `--hrm_gate_warmup_steps` lets you pretrain the language pathway before blending HRM latents; once the warmup window passes the gate opens automatically.
 - Use `--lr_min_ratio` to keep cosine/linear schedules from collapsing the learning rate during very long runs.
 - When a CUDA kernel times out the trainer now catches the failure, flushes caches safely, and retries the step after a short pause; the warning message tells you the retry is happening.
+- Transformer backends can enable a mixture-of-experts FFN via the `model.encoder.moe` config block (set `enabled: true` and tune `num_experts`, `top_k`, `capacity_factor`, `ff_multiplier`, `dropout`, and `aux_loss_weight`).
 
 ### Gated HRM Language Warmup (Stage A)
 Use this recipe to reproduce the initial English-only stabilization run before introducing reasoning curricula:

@@ -34,6 +34,7 @@ def set_seed(seed: int) -> None:
 
 
 def make_model(cfg) -> HRMLanguageModel:
+  encoder_cfg = OmegaConf.to_container(cfg.model.encoder, resolve=True)
   model = HRMLanguageModel(
     vocab_size=cfg.model.vocab_size,
     d_model=cfg.model.d_model,
@@ -44,6 +45,7 @@ def make_model(cfg) -> HRMLanguageModel:
     hrm_cfg=dict(cfg.model.hrm),
     bridge_cfg=dict(cfg.bridge),
     enc_backend=cfg.model.encoder.backend,
+    encoder_cfg=encoder_cfg,
   )
   return model
 

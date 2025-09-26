@@ -24,6 +24,7 @@ class HRMLanguageModel(nn.Module):
     hrm_cfg,
     bridge_cfg,
     enc_backend="transformer",
+    encoder_cfg=None,
   ):
     super().__init__()
     self.encoder = LMEncoder(
@@ -32,6 +33,7 @@ class HRMLanguageModel(nn.Module):
       enc_layers,
       max_enc_len,
       backend=enc_backend,
+      encoder_cfg=encoder_cfg,
     )
     self.prompt2hrm = PromptToHRMBridge(d_model)
     use_halting = hrm_cfg.get("use_halting", False)
@@ -72,7 +74,7 @@ class HRMLanguageModel(nn.Module):
     dec_attn_mask=None,
     labels=None,
   ):
-    enc_h, cls = self.encoder(input_ids, enc_attn_mask)
+    enc_h, cls, enc_aux = self.encoder(input_ids, enc_attn_mask)
     x = self.prompt2hrm(cls)
     need_aux = self.halting_weight > 0 or self.deep_supervision
     z, aux = self.hrm(x, return_all=need_aux)
@@ -169,5 +171,10 @@ class HRMLanguageModel(nn.Module):
           ds_losses.append(ce_cycle)
         if ds_losses and self.ds_weight > 0:
           loss = loss + self.ds_weight * torch.stack(ds_losses).mean()
+
+    if enc_aux is not None and loss is not None and getattr(self.encoder, 'moe_aux_weight', 0.0) > 0:
+      aux_weight = self.encoder.moe_aux_weight
+      loss = loss + aux_weight * enc_aux
+      metrics['moe_aux_loss'] = (aux_weight * enc_aux).detach().item()
 
     return {"logits": logits, "loss": loss, "metrics": metrics}
