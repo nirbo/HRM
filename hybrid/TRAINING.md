@@ -14,6 +14,16 @@ This document explains how to launch the hybrid HRM–LM trainer, how datasets a
 
 ## Running the Trainer
 
+### Encoder backends
+
+The hybrid HRM stack can run with three language backbones:
+
+- `mamba2` (default) – fast state-space encoder with kernel-size padding guard.
+- `rwkv6` – linear-time RWKV-style recurrent encoder tuned for stability on very long contexts.
+- `transformer` – standard attention stack (quadratic in sequence length).
+
+Set the desired backend in your config (`model.encoder.backend`) or override it per run using `--encoder_backend`.
+
 ## Dataset Preparation
 
 To convert parquet dumps (like the FineWeb derivative) into HRM-LM-ready token triplets, run:
@@ -145,6 +155,7 @@ To add a custom dataset:
 | `--config` | `src/hrm_lm/configs/default.yaml` | YAML config describing model/optim/train settings. |
 | `--dry_run` | `1` | When `1`, runs a single synthetic batch and exits; set to `0` for training. |
 | `--dataset` | `None` | Dataset loader name (currently `synthetic`). Required when training. |
+| `--encoder_backend` | config value | Override the encoder stack (`transformer`, `mamba2`, or `rwkv6`). |
 | `--batch_size` | config value | Overrides batch size used for training/validation batches. |
 | `--optimizer` | `adamw` | Optimizer choice (`adamw` or `adamw_8bit`; the latter requires `bitsandbytes`). |
 | `--learning_rate` | config value | Override optimizer learning rate. |

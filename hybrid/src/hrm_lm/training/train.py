@@ -421,6 +421,7 @@ def main():
   parser.add_argument('--config', default=None)
   parser.add_argument('--dry_run', action='store_true')
   parser.add_argument('--dataset', default=None)
+  parser.add_argument('--encoder_backend', default=None, choices=['transformer', 'mamba2', 'rwkv6'], help='Override model.encoder.backend from the config when provided.')
   parser.add_argument('--batch_size', type=int, default=None)
   parser.add_argument('--eval_batch_size', type=int, default=None)  # optional override for validation batch sizing
   parser.add_argument('--optimizer', default='adamw', choices=['adamw', 'adamw_8bit'])
@@ -448,6 +449,11 @@ def main():
   args = parser.parse_args()
 
   cfg = OmegaConf.load(args.config) if args.config else OmegaConf.load(Path(__file__).parent.parent / 'configs' / 'default.yaml')
+  if args.encoder_backend is not None:
+    cfg.model.encoder.backend = args.encoder_backend
+  backend_choice = getattr(cfg.model.encoder, 'backend', None)
+  if backend_choice not in {'transformer', 'mamba2', 'rwkv6'}:
+    raise ValueError('model.encoder.backend must be one of {transformer, mamba2, rwkv6}')
   requested_workers = args.dataset_workers if args.dataset_workers and args.dataset_workers > 0 else 1  # Capture the requested worker count, defaulting to one process.
   cpu_cap = mp.cpu_count() or 1  # Discover the local CPU capacity to prevent oversubscription.
   dataset_workers = max(1, min(requested_workers, cpu_cap))  # Clamp worker usage within the valid CPU range.
