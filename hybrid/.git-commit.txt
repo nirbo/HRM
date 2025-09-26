@@ -1,4 +1,3 @@
 Changes:
-- Extend reasoning dataset builder with additional English instruction corpora (Alpaca, Dolly, HH-RLHF, OpenHermes) plus remote loaders for CosmosQA/MathQA and new formatters.
-- Enable TF32 configuration in trainer via config flag, add helper, adjust retry cache handling, and default-toggle in config.
-- Document HRM signal diagnostics in reasoning guide and update state tracking files with latest actions.
+- Documented CUDA optimization roadmap in new CUDA.md (CUDA graphs, CuPy, CUTLASS, allocator guidance) with implementation plans and references.
+- Logged statefile updates for CUDA research.

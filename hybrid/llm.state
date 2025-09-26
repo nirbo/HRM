@@ -1355,6 +1355,8 @@
 - 2025-09-26T15:21Z: Synced statefile backup after defensive CUDA handling change.
 - 2025-09-26T15:25Z: Analyzing GPU utilization swings; prepared suggestions for pinning usage near saturation.
 - 2025-09-26T15:28Z: Added TF32 configuration helper in trainer, wired to config flag, and enabled by default in `default.yaml`.
+- 2025-09-26T15:32Z: Authored CUDA.md design doc covering CUDA Graphs, CuPy, CUTLASS, and allocator/TF32 guidance with implementation plans.
+- 2025-09-26T15:36Z: Researched CUDA 13.x support (no official wheels yet; tracked ongoing CI work) and documented findings in CUDA.md.
 ### Pending Steps
 - Replay `runs/mamba2-stage-1/checkpoints/nan_batch_step_005634.pt` once GPU resources free to isolate Mamba2 NaN source (carried over).
 
