@@ -27,6 +27,12 @@ warnings.filterwarnings('ignore', message='.*Nested Tensor.*')
 console = Console(highlight=False)
 
 
+def configure_tf32(enable: bool) -> None:
+  torch.backends.cuda.matmul.allow_tf32 = bool(enable)
+  torch.backends.cudnn.allow_tf32 = bool(enable)
+  torch.set_float32_matmul_precision('highest' if enable else 'medium')
+
+
 def set_seed(seed: int) -> None:
   random.seed(seed)
   torch.manual_seed(seed)
@@ -450,6 +456,8 @@ def main():
   args = parser.parse_args()
 
   cfg = OmegaConf.load(args.config) if args.config else OmegaConf.load(Path(__file__).parent.parent / 'configs' / 'default.yaml')
+  tf32_enabled = bool(getattr(cfg.train, 'enable_tf32', False))
+  configure_tf32(tf32_enabled)
   backend_choice = getattr(cfg.model.encoder, 'backend', 'transformer')
   if backend_choice not in {'transformer', 'mamba2'}:
     raise ValueError("model.encoder.backend must be 'transformer' or 'mamba2'")
@@ -661,6 +669,7 @@ def main():
     dec_mask = truncate_to_max_length(dec_mask, effective_seq_len).to(device).bool()
 
     attempt = 0
+    max_retries = 3  # allow up to three retries for transient CUDA faults
     raw_grad_norm = 0.0
     metrics = {}  # track optional HRM diagnostics from the forward pass
     skip_step = False  # flag batches that produce non-finite loss so we can skip safely
@@ -706,23 +715,30 @@ def main():
         break
       except RuntimeError as exc:
         message = str(exc).lower()
-        if ('launch timed out' in message or 'device-side assert' in message) and attempt < 1:
-          console.print('[bold red]CUDA timeout detected; retrying current step after cache flush.[/bold red]')
+        if ('launch timed out' in message or 'device-side assert' in message) and attempt < max_retries:
+          console.print(f'[bold red]CUDA timeout detected; retrying current step ({attempt + 1}/{max_retries}) after cache flush.[/bold red]')
           if torch.cuda.is_available():
             try:
               torch.cuda.synchronize()
             except Exception as sync_err:
               console.print(f'[bold yellow]CUDA synchronize failed after timeout: {sync_err}; proceeding with retry without full sync.[/bold yellow]')
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
+            try:
+              torch.cuda.empty_cache()
+              torch.cuda.ipc_collect()
+            except torch.cuda.CudaError as cache_err:
+              console.print(f'[bold yellow]Skipping cache flush after timeout: {cache_err}[/bold yellow]')
           time.sleep(1.0)
           attempt += 1
           continue
-        elif 'cublas' in message and attempt < 1:
-          console.print('[bold red]cuBLAS error detected; retrying current step after cache flush.[/bold red]')  # surface cuBLAS faults before retry
+        elif 'cublas' in message and attempt < max_retries:
+          console.print(f'[bold red]cuBLAS error detected; retrying current step ({attempt + 1}/{max_retries}) after cache flush.[/bold red]')  # surface cuBLAS faults before retry
           if torch.cuda.is_available():
             torch.cuda.synchronize()  # drain outstanding kernels so cuBLAS can recover
-            torch.cuda.empty_cache()  # release allocator caches that may confuse cuBLAS
+            try:
+              torch.cuda.empty_cache()  # release allocator caches that may confuse cuBLAS
+              torch.cuda.ipc_collect()
+            except torch.cuda.CudaError as cache_err:
+              console.print(f'[bold yellow]Skipping cache flush after cuBLAS error: {cache_err}[/bold yellow]')
           time.sleep(1.0)  # small pause gives driver time to settle
           attempt += 1
           continue

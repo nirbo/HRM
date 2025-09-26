@@ -1211,12 +1211,55 @@
 - 2025-09-26T01:41Z: Captured current timestamp via `date -u +\"%Y-%m-%dT%H:%MZ\"` while preparing documentation.
 - 2025-09-26T01:41Z: Updated Codex plan tool to begin documentation/mitigation step; command succeeded.
 - 2025-09-26T01:41Z: Logged documentation phase start via python script entry; command succeeded.
+- 2025-09-26T01:41Z: Captured current timestamp via `date -u +\"%Y-%m-%dT%H:%MZ\"` before syncing statefile backup.
+- 2025-09-26T01:41Z: Created fresh `llm.state.bak` snapshot via `cp` to preserve documentation updates; command succeeded.
+- 2025-09-26T01:41Z: Logged statefile backup operation via python script entry; command succeeded.
+- 2025-09-26T01:42Z: Captured current timestamp via `date -u +\"%Y-%m-%dT%H:%MZ\"` after writing task completion summary.
+- 2025-09-26T01:42Z: Updated task completion summary with NaN analysis, root-cause evidence, and mitigation notes via python script; command succeeded.
+- 2025-09-26T01:42Z: Logged completion-summary update via python script entry; command succeeded.
+- 2025-09-26T01:42Z: Captured current timestamp via `date -u +\"%Y-%m-%dT%H:%MZ\"` after finishing documentation phase.
+- 2025-09-26T01:42Z: Updated Codex plan tool to mark documentation/mitigation step complete; command succeeded.
+- 2025-09-26T01:42Z: Logged documentation-step completion via python script entry; command succeeded.
+- 2025-09-26T01:43Z: Captured current timestamp via `date -u +\"%Y-%m-%dT%H:%MZ\"` before finalizing pending steps.
+- 2025-09-26T01:43Z: Cleared pending steps (plan complete) via python script; command succeeded.
+- 2025-09-26T01:43Z: Logged pending-step clearance via python script entry; command succeeded.
+- 2025-09-26T02:06Z: User approved Mamba patch + RWKV integration tasks; transitioning to implementation.
+- 2025-09-26T02:06Z: Captured current timestamp via `date -u +\"%Y-%m-%dT%H:%MZ\"` ahead of plan reset.
+- 2025-09-26T02:07Z: Updated Codex plan tool with four-step implementation roadmap; command succeeded.
+- 2025-09-26T02:08Z: Patched `src/hrm_lm/models/mamba2_layers.py` to pad sub-kernel sequences before Mamba fast path; command succeeded.
+- 2025-09-26T02:08Z: Ran `python -m compileall src/hrm_lm/models/mamba2_layers.py` to validate syntax; command succeeded.
+- 2025-09-26T02:08Z: Marked Mamba guard step complete and moved RWKV integration to in-progress via plan tool update.
+- 2025-09-26T02:10Z: Added `src/hrm_lm/models/rwkv6_layers.py` implementing lightweight RWKV-6 stack for HRM integration; command succeeded.
+- 2025-09-26T02:10Z: Updated `src/hrm_lm/models/encoder.py` to recognize `rwkv6` backend option; command succeeded.
+- 2025-09-26T02:10Z: Ran `python -m compileall` for RWKV stack and encoder updates; command succeeded.
+- 2025-09-26T02:11Z: Marked RWKV module work complete and shifted integration step to in-progress via plan tool.
+- 2025-09-26T02:12Z: Updated default config backend comment to advertise rwkv6 option; command succeeded.
+- 2025-09-26T02:13Z: Added `--encoder_backend` CLI override and backend validation in train.py; command succeeded.
+- 2025-09-26T02:14Z: Ran `python -m compileall src/hrm_lm/training/train.py` to confirm CLI changes; command succeeded.
+- 2025-09-26T02:14Z: Documented backend choices and CLI override in TRAINING.md; command succeeded.
+- 2025-09-26T02:14Z: Marked backend integration step complete; remaining task is testing & documentation wrap-up.
+- 2025-09-26T02:15Z: Replayed saved NaN batch on GPU after padding guard; loss now finite (≈5.18).
+- 2025-09-26T02:16Z: Ran RWKV-6 dry-run (loss≈11.96) via `python -m hrm_lm.training.train --dry_run --encoder_backend rwkv6`; command succeeded.
+- 2025-09-26T02:16Z: Completed test + doc step; plan marked fully complete via plan tool.
+- 2025-09-26T02:17Z: Added padding guard comment in mamba stack for clarity; command succeeded.
+- 2025-09-26T02:17Z: Extended task completion summary with RWKV integration notes; command succeeded.
+- 2025-09-26T02:18Z: Dropped unused math import from RWKV stack file; command succeeded.
+- 2025-09-26T02:18Z: Recompiled rwkv6_layers.py after cleanup to confirm syntax; command succeeded.
+- 2025-09-26T02:19Z: Refreshed LMEncoder header comment to list RWKV6 backend; command succeeded.
+- 2025-09-26T02:19Z: Recompiled encoder module after header tweak; command succeeded.
+- 2025-09-26T02:49Z: User compiled RWKV CUDA kernels; commencing integration of fast backend wrapper.
+- 2025-09-26T02:58Z: Vendor-copied RWKV CUDA sources into `src/hrm_lm/models/rwkv_cuda/` for integration.
+- 2025-09-26T02:59Z: Replaced RWKV stack with CUDA-backed implementation (falls back to PyTorch loop when unavailable).
+- 2025-09-26T03:00Z: Built/loaded wkv6 extension and ran rwkv6 dry-run (loss≈11.93) using CUDA kernels.
+- 2025-09-26T03:06Z: Adjusted RWKV backward path to write gradients in BF16 buffers before casting, removing dtype runtime error.
+- 2025-09-26T03:57Z: User requested RWKV backend removal; preparing rollback of related code.
+- 2025-09-26T03:58Z: Removed RWKV backend files and reverted encoder/config/CLI changes per user request.
+- 2025-09-26T04:22Z: Implemented Transformer MoE layer, config plumbing, and documentation; dry-run succeeds.
 
 
 ### Pending Steps
-- Execute plan step 6.
-- Execute plan step 7.
-- Execute plan step 8.
+- None; plan complete.
+- Locate original mamba checkpoint commit and replay nan batch once GPU is free to isolate non-finite source.
 
 
 ### Current Summary
@@ -1227,12 +1270,101 @@
 - Batch includes extremely short sequences (lengths as low as 2 < Mamba conv kernel 4), flagging selective-scan instability risk.
 - Data pipeline verified: pad_batch outputs finite tensors; no inherent NaN sources detected.
 - Evidence: d_conv=4 while offending batch has seq length 2, implicating causal_conv1d fast path on short contexts.
+- Implementation phase pending: Mamba guard + RWKV-6 integration & validation.
+- Mamba stack now self-pads sequences shorter than kernel (4) before fused selective-scan executes.
+- RWKV-6 stack module added and encoder backend selection extended.
+- GPU replay of step_003990 batch now yields finite loss (~5.18) with gate still closed, confirming padding fix.
+- RWKV-6 backend passes dry-run with finite loss, confirming integration path.
+- Verified fast path via dry-run; Mamba padding guard remains in place (GPU replay finite).
+- RWKV backend removed; encoder now supports transformer or mamba2 only.
+- Transformer backend now supports optional MoE FFN with configurable experts and aux loss tying into training metrics.
 
 
 ### Open Issues
-- Investigate Mamba selective-scan stability when sequence length < d_conv (batch includes len=2 tokens).
-- Need GPU environment to replay saved NaN batch through model checkpoint for confirmation.
+- None at this time.
 
 
 ### Task Completion Summary
-- Pending.
+- Gathered guard artifacts; confirmed only loss tensor is NaN while inputs/masks remain finite.
+- Identified Mamba selective-scan uses kernel width 4 (`src/hrm_lm/models/mamba2_layers.py:15`) and offending batch contains <=2-token sequences, implicating fast-path instability on short contexts.
+- Documented mitigation options (pad/drop short samples or bypass fast path) and noted GPU replay required for final confirmation.
+- RWKV backend removed; documentation and configs now reflect transformer/mamba2 only.
+- Added Transformer MoE option with gating, config knobs, and metrics integration; verified via targeted dry-run.
+## Session 2025-09-26T13:50Z
+### Original Task Description
+- Interpret overnight Transformer+MoE HRM training metrics (loss/grad/gate/halt) and continue preparations for the outstanding Mamba2 NaN investigation once compute is free.
+
+### Plan
+1. Append new session entry to statefile and log initial context review steps.
+2. Review implementation/docs for Transformer MoE and HRM metrics to clarify the meaning of `gate` and `halt` values observed in logs.
+3. Summarize interpretations of the reported metrics for the user, noting implications for training stability and next actions.
+
+### Action Log
+- 2025-09-26T13:46Z: Read AGENTS.md header via `sed -n '1,200p' AGENTS.md` to refresh critical rules.
+- 2025-09-26T13:48Z: Reviewed existing `llm.state` entries via `sed -n '1,160p' llm.state` to align with prior progress and outstanding tasks.
+
+- 2025-09-26T13:52Z: Queried metric logging output via `rg "gate \u03bc" -n src` and inspected `src/hrm_lm/training/train.py` (header plus logging/gradient sections) to capture gate/halt reporting.
+- 2025-09-26T13:54Z: Reviewed HRM metric generation in `src/hrm_lm/models/hybrid.py`, `src/hrm_lm/models/hrm_core.py`, and `src/hrm_lm/models/bridges.py` to understand gate and halting semantics.
+- 2025-09-26T13:56Z: Examined `src/hrm_lm/configs/default.yaml` to confirm halting and MoE defaults guiding the overnight run.
+- 2025-09-26T13:58Z: Refreshed statefile backup by copying `llm.state` to `llm.state.bak`.
+
+- 2025-09-26T13:59Z: Normalized spacing between action log entries and pending step header for readability.
+- 2025-09-26T14:02Z: Gathered citation line numbers via `nl -ba` for `src/hrm_lm/models/hybrid.py`, `src/hrm_lm/training/train.py`, and `src/hrm_lm/configs/default.yaml`, plus `rg "grad_clip" -n` to confirm clipping context.
+- 2025-09-26T14:05Z: Updated session summary with interpreted loss/gradient/gate/halting insights from overnight MoE+HRM run.
+- 2025-09-26T14:06Z: Marked plan item execution complete and pruned placeholder pending step entry.
+- 2025-09-26T14:07Z: Finalized task completion summary to reflect delivered metric interpretation and pending Mamba replay.
+- 2025-09-26T14:01Z: Updated working plan via plan tool to analyze HRM halting configuration.
+- 2025-09-26T14:01Z: Re-read `src/hrm_lm/configs/default.yaml` HRM block to confirm halting parameters (use_halting, halting_weight=0.01, halting_target=1.0).
+- 2025-09-26T14:02Z: Prepared interpretation of halting metrics versus 0.01 halting weight for user response.
+- 2025-09-26T14:10Z: Assessed halting-weight scaling strategy for upcoming mixed-text/mathematics corpus to advise on new regularizer settings.
+- 2025-09-26T14:15Z: Logged user question on gate/halting metric relationship for targeted explanation.
+- 2025-09-26T14:16Z: Re-validated gate and halting math in `src/hrm_lm/models/hybrid.py` (lines 85-149) and trainer logging block (`src/hrm_lm/training/train.py` lines 739-768) for explanation readiness.
+- 2025-09-26T14:18Z: Summarized gate/halting diagnostic guidance for user response.
+- 2025-09-26T14:19Z: Added HRM gate/halting diagnostic bullet list to `REASON-TRAINING.md` to persist log-interpretation guidance.
+- 2025-09-26T14:19Z: Synced statefile backup (`llm.state.bak`) after documentation update.
+- 2025-09-26T14:25Z: Ran `PYTHONPATH=src ./venv/bin/python -m hrm_lm.inference.generate` against `runs/moe-stage-1/best-model/model.pt`; output token stream began `Hellorather`.
+- 2025-09-26T14:25Z: Synced updated statefile backup after inference smoke test.
+- 2025-09-26T14:27Z: Confirmed short greedy samples trace back to limited Stage-A training rather than inference bug.
+- 2025-09-26T14:27Z: Synced statefile backup after clarifying inference behaviour.
+- 2025-09-26T14:32Z: Queried Hugging Face datasets API for general reasoning corpora (ai2_arc, commonsense_qa, cosmos_qa).
+- 2025-09-26T14:28Z: Reviewed `scripts/build_reasoning_dataset.py` header to confirm existing formatter/registry structure.
+- 2025-09-26T14:30Z: Added formatter functions and registry entries for `ai2_arc`, `commonsense_qa`, and `cosmos_qa` datasets.
+- 2025-09-26T14:31Z: Ran `python -m compileall scripts/build_reasoning_dataset.py` to verify syntax; command succeeded.
+- 2025-09-26T14:31Z: Synced statefile backup after dataset script update.
+- 2025-09-26T14:34Z: User attempted multi-dataset invocation of build_reasoning_dataset.py; CLI currently accepts a single dataset key per run.
+- 2025-09-26T14:38Z: Added remote fetch helpers for CosmosQA and MathQA plus HF schema-safe formatter updates in `scripts/build_reasoning_dataset.py`.
+- 2025-09-26T14:40Z: Updated dataset registry/load logic to route custom loaders and tolerate Hugging Face schema changes.
+- 2025-09-26T14:42Z: Re-ran `python -m compileall scripts/build_reasoning_dataset.py` (pass) and spot-checked ai2_arc/commonsense_qa/cosmos_qa/math_qa exports with `limit=1`.
+- 2025-09-26T14:43Z: Synced statefile backup after dataset loader enhancements.
+- 2025-09-26T14:46Z: Summarized dataset prep + merge plan and advised on balancing reasoning corpora with additional language sources.
+- 2025-09-26T14:55Z: Added high-quality English datasets (alpaca-cleaned, Dolly-15k, Anthropic HH-RLHF) to `scripts/build_reasoning_dataset.py` with new formatters and registry entries.
+- 2025-09-26T14:57Z: Extended loaders with remote fetchers for CosmosQA/MathQA and validated updated script via compileall.
+- 2025-09-26T14:58Z: Smoke-tested exports for ai2_arc, commonsense_qa, cosmos_qa, gsm8k, math_qa, mbpp, alpaca_cleaned, dolly, hh_rlhf (`limit=1`).
+- 2025-09-26T14:58Z: Synced statefile backup after dataset additions and tests.
+- 2025-09-26T15:00Z: Generated single-line shell loop to run `prepare_language_dataset.py` across all reasoning/language datasets.
+- 2025-09-26T15:04Z: Integrated OpenHermes-2.5 into dataset script (formatter, registry) and verified export with limit=1.
+- 2025-09-26T15:04Z: Synced statefile backup after OpenHermes integration.
+- 2025-09-26T15:06Z: Noted OpenHermes raw directory missing; need to rerun build_reasoning_dataset export before prep.
+- 2025-09-26T15:09Z: Provided guidance on learning rate schedule for mixed language+reasoning training stage.
+- 2025-09-26T15:11Z: Shared decimal-form learning rate recommendation (0.0002) for current training run.
+- 2025-09-26T15:13Z: Reviewed upcoming training command; confirmed flags/values look consistent with new dataset mix.
+- 2025-09-26T15:16Z: Recorded CUDA timeout behavior (step ~20448) to investigate mitigation strategies.
+- 2025-09-26T15:18Z: Raised CUDA retry budget to 3 in `src/hrm_lm/training/train.py` and recompiled to mitigate watchdog timeouts.
+- 2025-09-26T15:18Z: Synced statefile backup after retry-budget change.
+- 2025-09-26T15:21Z: Wrapped CUDA cache flushes in try/except to avoid secondary failures after watchdog timeouts; recompiled trainer.
+- 2025-09-26T15:21Z: Synced statefile backup after defensive CUDA handling change.
+- 2025-09-26T15:25Z: Analyzing GPU utilization swings; prepared suggestions for pinning usage near saturation.
+- 2025-09-26T15:28Z: Added TF32 configuration helper in trainer, wired to config flag, and enabled by default in `default.yaml`.
+### Pending Steps
+- Replay `runs/mamba2-stage-1/checkpoints/nan_batch_step_005634.pt` once GPU resources free to isolate Mamba2 NaN source (carried over).
+
+### Current Summary
+- Transformer+MoE run is in the LR tail (1e-6) with losses oscillating 3.5–4.1 while the gradient clip at 1.0 catches raw norms in the 1.6–2.2 range.
+- HRM gate averages ~0.02 with batch extrema up to ~0.26, so the decoder is mostly relying on its base path but selectively leans on HRM for harder samples.
+- Halting sums hover at 1.00±0.01, matching the config target and confirming the halt regularizer is keeping cycle usage on budget.
+
+### Open Issues
+- Root cause of Mamba2 NaNs remains unidentified pending batch replay analysis.
+
+### Task Completion Summary
+- Interpreted overnight Transformer+MoE HRM metrics (loss/grad/gate/halt) and relayed findings to the user; Mamba2 NaN replay remains queued.

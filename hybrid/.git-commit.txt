@@ -1,10 +1,4 @@
-Title: Add Transformer MoE option
-
-Summary:
-- Replace the stock Transformer encoder with a custom block that supports mixture-of-experts feed-forward layers, including gating, top-k routing, capacity control, and load-balancing aux loss.
-- Extend LMEncoder/Hybrid plumbing to surface the MoE auxiliary loss and allow weighting via config, while keeping the mamba path unchanged and updating HRM/Mamba fallbacks for the new encoder API.
-- Add `model.encoder.moe` settings to the default config and refresh documentation/state tracking to explain how to enable and tune the MoE backend.
-
-Testing:
-- PYTHONPATH=src ./venv/bin/python -m hrm_lm.training.train --dry_run
-- Transformer+MoE smoke test via inline Python script (build model, forward pass)
+Changes:
+- Extend reasoning dataset builder with additional English instruction corpora (Alpaca, Dolly, HH-RLHF, OpenHermes) plus remote loaders for CosmosQA/MathQA and new formatters.
+- Enable TF32 configuration in trainer via config flag, add helper, adjust retry cache handling, and default-toggle in config.
+- Document HRM signal diagnostics in reasoning guide and update state tracking files with latest actions.

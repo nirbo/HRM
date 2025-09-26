@@ -196,3 +196,7 @@ python -m hrm_lm.training.train \
 - All dataset mixing commands assume preprocessed JSONL triples matching the trainer format.
 - Adjust weights/steps/learning rates as empirical results dictate; values above are starting points.
 - Remember to validate merged datasets with `json.loads` sweeps before launching large runs.
+- **HRM signal diagnostics:**
+  - `gate μ` and its `[min,max]` window report how much decoder memory is coming from the HRM bridge; rising means the gate head is routing harder batches toward HRM while low mins show easy samples skipping it.
+  - `halt Σ` is the batch-mean sum of per-cycle halting probabilities; keep it near the configured target (1.0 by default) and watch the spread to spot wasted cycles or premature exits.
+  - The halting penalty is scaled by both `halting_weight` and the average gate strength, so raising the weight only has bite once the gate is open. For mixed 75/25 language↔reasoning corpora start around 0.05–0.10, monitor the logs, then step toward 0.15+ only if `halt Σ` consistently overshoots.

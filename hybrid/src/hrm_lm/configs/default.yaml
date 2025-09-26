@@ -5,13 +5,13 @@ model:
   n_heads: 8
   dropout: 0.0
   encoder:
-    backend: mamba2  # transformer | mamba2
+    backend: transformer  # transformer | mamba2
     n_layers: 8
     max_seq_len: 2048
     moe:
-      enabled: false
-      num_experts: 4
-      top_k: 1
+      enabled: true
+      num_experts: 8
+      top_k: 4
       capacity_factor: 1.25
       ff_multiplier: 4.0
       dropout: 0.0
@@ -29,7 +29,7 @@ model:
     l_steps: 8
     approx_grad: one_step  # one_step | bptt
     use_halting: true
-    halting_weight: 0.01
+    halting_weight: 0.1
     halting_target: 1.0
     out_dim: 512
     deep_supervision: false
@@ -42,9 +42,10 @@ optim:
   weight_decay: 0.0
   betas: [0.9, 0.95]
 train:
-  seed: 900
+  seed: 888
   batch_size: 2
   eval_batch_size: 2
   seq_len: 256
   tgt_len: 64
   mixed_precision: bf16
+  enable_tf32: true
