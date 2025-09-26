@@ -1,13 +1,8 @@
-Title: Patch Mamba guard and add RWKV-6 backend
+Title: Fix RWKV CUDA backward dtype bug
 
 Summary:
-- Implement padding guard around the Mamba2 selective-scan fast path so sub-kernel sequences are padded before fused CUDA kernels run, preventing BF16 NaNs from short contexts.
-- Introduce a lightweight RWKV-6 encoder stack, wire it into the hybrid model backend selection, and expose a CLI flag/config option for choosing between transformer, mamba2, and rwkv6.
-- Update training docs and default config comments to document the new backend options and mention the Mamba guard.
-- Extend the trainer to validate encoder backend choices and allow overriding via `--encoder_backend`.
-- Confirm stability by replaying the previously failing batch on GPU and running a RWKV dry-run smoke test.
+- Ensure gradients returned by the fused RWKV kernel are written into BF16 buffers and cast back to the caller's dtype, matching the kernel's expectations.
+- Rebuild the dry-run to confirm the accelerated backend works end-to-end.
 
 Testing:
-- python -m compileall src/hrm_lm/models/mamba2_layers.py src/hrm_lm/models/rwkv6_layers.py src/hrm_lm/models/encoder.py src/hrm_lm/training/train.py
-- PYTHONPATH=src ./venv/bin/python -m hrm_lm.training.train --dry_run --encoder_backend rwkv6
-- GPU replay of nan_batch_step_003990.pt with updated Mamba stack (loss finite)
+- export TORCH_CUDA_ARCH_LIST=12.0+PTX MAX_JOBS=30 PATH="$PWD/venv/bin:$PATH" && PYTHONPATH=src ./venv/bin/python -m hrm_lm.training.train --dry_run --encoder_backend rwkv6

@@ -90,13 +90,14 @@ class _WKV6Function(torch.autograd.Function):
     gr = torch.empty_like(r)
     gk = torch.empty_like(k)
     gv = torch.empty_like(v)
-    gw = torch.empty_like(w)
-    gu_tmp = torch.empty(B, C, device=u.device, dtype=u.dtype)
+    gw_tmp = torch.empty(B, T, C, device=w.device, dtype=torch.bfloat16)
+    gu_tmp = torch.empty(B, C, device=u.device, dtype=torch.bfloat16)
 
-    ops.backward(B, T, C, H, r, k, v, w, u, gy, gr, gk, gv, gw, gu_tmp)
+    ops.backward(B, T, C, H, r, k, v, w, u, gy, gr, gk, gv, gw_tmp, gu_tmp)
     gu = torch.sum(gu_tmp, dim=0).view(H, C // H)
+    gw = gw_tmp.to(w.dtype)
 
-    return (None, gr, gk, gv, gw.to(torch.float32), gu)
+    return (None, gr, gk, gv, gw, gu)
 
 
 def _run_wkv6_cuda(ops, r, k, v, w, u):
