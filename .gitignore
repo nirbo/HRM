@@ -171,3 +171,4 @@ cython_debug/
 runs/
 uv.lock
 redpajama-data/
+RWKV-CUDA/
