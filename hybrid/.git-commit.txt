@@ -1,8 +1,7 @@
-Title: Fix RWKV CUDA backward dtype bug
+Title: Log RWKV backward fix in statefile
 
 Summary:
-- Ensure gradients returned by the fused RWKV kernel are written into BF16 buffers and cast back to the caller's dtype, matching the kernel's expectations.
-- Rebuild the dry-run to confirm the accelerated backend works end-to-end.
+- Record the RWKV gradient dtype fix in `llm.state` for future traceability.
 
 Testing:
-- export TORCH_CUDA_ARCH_LIST=12.0+PTX MAX_JOBS=30 PATH="$PWD/venv/bin:$PATH" && PYTHONPATH=src ./venv/bin/python -m hrm_lm.training.train --dry_run --encoder_backend rwkv6
+- not run (documentation update only)

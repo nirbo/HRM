@@ -1251,6 +1251,7 @@
 - 2025-09-26T02:58Z: Vendor-copied RWKV CUDA sources into `src/hrm_lm/models/rwkv_cuda/` for integration.
 - 2025-09-26T02:59Z: Replaced RWKV stack with CUDA-backed implementation (falls back to PyTorch loop when unavailable).
 - 2025-09-26T03:00Z: Built/loaded wkv6 extension and ran rwkv6 dry-run (loss≈11.93) using CUDA kernels.
+- 2025-09-26T03:06Z: Adjusted RWKV backward path to write gradients in BF16 buffers before casting, removing dtype runtime error.
 
 
 ### Pending Steps
