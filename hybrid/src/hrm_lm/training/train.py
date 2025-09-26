@@ -10,7 +10,7 @@ import re
 import time
 import shutil
 from pathlib import Path
-from typing import Iterator, List, Optional, Tuple
+from typing import Callable, Iterator, List, Optional, Tuple
 
 import warnings
 import torch
@@ -21,10 +21,32 @@ from rich.console import Console
 from hrm_lm.data.synthetic import build_synthetic_dataset, pad_batch
 from hrm_lm.models.hybrid import HRMLanguageModel
 
+try:
+  from torch.profiler import record_function
+except ImportError:  # torch.profiler optional depending on build
+  record_function = None
+
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 warnings.filterwarnings('ignore', message='.*Nested Tensor.*')
 console = Console(highlight=False)
+
+
+class NvtxRangeManager:
+  def __init__(self, enabled: bool) -> None:
+    self._enabled = bool(enabled) and record_function is not None
+
+  def context(self, name: str):
+    if self._enabled:
+      return record_function(name)  # type: ignore[misc]
+    return contextlib.nullcontext()
+
+  @property
+  def enabled(self) -> bool:
+    return self._enabled
+
+  def __call__(self, name: str):
+    return self.context(name)
 
 
 def configure_tf32(enable: bool) -> None:
@@ -41,6 +63,24 @@ def set_seed(seed: int) -> None:
 
 def make_model(cfg) -> HRMLanguageModel:
   encoder_cfg = OmegaConf.to_container(cfg.model.encoder, resolve=True)
+  if not isinstance(encoder_cfg, dict):
+    encoder_cfg = {}
+  mp_mode = str(getattr(cfg.train, 'mixed_precision', 'none')).lower()
+  if mp_mode == 'fp8':
+    train_fp8_cfg = OmegaConf.to_container(getattr(cfg.train, 'fp8', {}), resolve=True)
+    if not isinstance(train_fp8_cfg, dict):
+      train_fp8_cfg = {}
+    enc_fp8 = encoder_cfg.setdefault('fp8', {})
+    enc_fp8['enabled'] = True
+    for key, value in train_fp8_cfg.items():
+      if key == 'enabled':
+        continue
+      enc_fp8.setdefault(key, value)
+  elif 'fp8' in encoder_cfg:
+    fp8_cfg = encoder_cfg.get('fp8') or {}
+    if isinstance(fp8_cfg, dict):
+      fp8_cfg.setdefault('enabled', False)
+      encoder_cfg['fp8'] = fp8_cfg
   model = HRMLanguageModel(
     vocab_size=cfg.model.vocab_size,
     d_model=cfg.model.d_model,
@@ -471,6 +511,19 @@ def main():
   lr_min_ratio = max(0.0, float(args.lr_min_ratio))  # Floor multiplier applied to learning-rate decay schedules.
   set_seed(cfg.train.seed)
 
+  profiling_cfg = getattr(cfg, 'profiling', None)
+  nvtx_cfg = getattr(profiling_cfg, 'nvtx', None) if profiling_cfg is not None else None
+  nvtx_enabled = bool(getattr(nvtx_cfg, 'enabled', False)) if nvtx_cfg is not None else False
+  nvtx_include_data = bool(getattr(nvtx_cfg, 'include_data', True)) if nvtx_cfg is not None else False
+  nvtx_include_eval = bool(getattr(nvtx_cfg, 'include_eval', True)) if nvtx_cfg is not None else True
+  nvtx_range = NvtxRangeManager(nvtx_enabled)
+  if nvtx_enabled and not nvtx_range.enabled:
+    console.print('[bold yellow]NVTX profiling requested but torch.profiler.record_function is unavailable; disabling ranges.[/bold yellow]')
+
+  if args.mixed_precision == 'none':
+    args.mixed_precision = str(getattr(cfg.train, 'mixed_precision', 'none'))
+
+
   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
   effective_batch_size = args.batch_size if args.batch_size is not None else cfg.train.batch_size
   if effective_batch_size <= 0:
@@ -572,12 +625,47 @@ def main():
     steps_per_epoch = max(1, math.ceil(dataset_size / effective_batch_size))
     total_steps = steps_per_epoch * args.epochs
 
-  mp_mode = args.mixed_precision.lower()
+  mp_mode = str(args.mixed_precision).lower()
+  fp8_requested = mp_mode == 'fp8'
   use_autocast = mp_mode in ('fp16', 'bf16')
   autocast_dtype = torch.float16 if mp_mode == 'fp16' else (torch.bfloat16 if mp_mode == 'bf16' else None)
   fp16_enabled = mp_mode == 'fp16' and device.type == 'cuda'
   scaler = torch.amp.GradScaler('cuda', enabled=fp16_enabled)
   autocast_kwargs = {'device_type': device.type, 'dtype': autocast_dtype} if (use_autocast and autocast_dtype is not None) else None
+  fp8_context_factory: Optional[Callable[[bool], contextlib.AbstractContextManager]] = None
+  fp8_recipe = None
+  fp8_warmup_steps = 0
+  if fp8_requested:
+    try:
+      import transformer_engine.pytorch as te  # type: ignore
+    except ImportError as exc:
+      raise ImportError('TransformerEngine is required for fp8 mixed precision. Install via `pip install transformer-engine`.') from exc
+    fp8_cfg_container = OmegaConf.to_container(getattr(cfg.train, 'fp8', {}), resolve=True)
+    if not isinstance(fp8_cfg_container, dict):
+      fp8_cfg_container = {}
+    fp8_warmup_steps = int(fp8_cfg_container.get('warmup_steps', 0) or 0)
+    format_str = str(fp8_cfg_container.get('format', 'e4m3')).lower()
+    if format_str not in {'e4m3', 'e5m2'}:
+      raise ValueError(f"Unsupported FP8 format '{format_str}'. Choose 'e4m3' or 'e5m2'.")
+    fp8_format = te.FP8Format.E4M3 if format_str == 'e4m3' else te.FP8Format.E5M2
+    recipe_cfg = fp8_cfg_container.get('recipe', {}) or {}
+    recipe_kwargs = {
+      'fp8_format': fp8_format,
+      'margin': int(recipe_cfg.get('margin', 0) or 0),
+      'interval': int(recipe_cfg.get('interval', 1) or 1),
+      'amax_history_len': int(recipe_cfg.get('amax_history_len', 16) or 16),
+      'amax_compute_algo': str(recipe_cfg.get('amax_compute_algo', 'max')),
+    }
+    fp8_recipe = te.DelayedScaling(**recipe_kwargs)
+
+    def fp8_context(enabled: bool):
+      return te.fp8_autocast(enabled=bool(enabled), recipe=fp8_recipe)
+
+    fp8_context_factory = fp8_context
+    use_autocast = False
+    autocast_kwargs = None
+    scaler = None
+    console.print(f"[bold cyan]FP8 training enabled (format={format_str.upper()}, warmup={fp8_warmup_steps} steps).[/bold cyan]")
 
   cfg_serializable = OmegaConf.to_container(cfg, resolve=True)
   model.train()
@@ -658,25 +746,50 @@ def main():
     b_dec_mask = truncate_to_max_length(b_dec_mask, effective_seq_len).to(device).bool()
     return b_enc, b_dec_in, b_labels, b_enc_mask, b_dec_mask
 
-  def execute_step(enc, dec_in, labels, enc_mask, dec_mask, *, apply_clip: bool = True):
-    optimizer.zero_grad(set_to_none=True)
-    ctx = torch.autocast(**autocast_kwargs) if autocast_kwargs else contextlib.nullcontext()
-    with ctx:
+  def execute_step(
+    enc,
+    dec_in,
+    labels,
+    enc_mask,
+    dec_mask,
+    *,
+    apply_clip: bool = True,
+    nvtx: Optional[NvtxRangeManager] = None,
+    fp8_context: Optional[Callable[[bool], contextlib.AbstractContextManager]] = None,
+    fp8_enabled: bool = False,
+  ):
+    zero_ctx = nvtx('optimizer.zero_grad') if nvtx is not None else contextlib.nullcontext()
+    with zero_ctx:
+      optimizer.zero_grad(set_to_none=True)
+
+    fp8_ctx = fp8_context(fp8_enabled) if fp8_context is not None else contextlib.nullcontext()
+    autocast_ctx = torch.autocast(**autocast_kwargs) if autocast_kwargs else contextlib.nullcontext()
+    forward_ctx = nvtx('forward') if nvtx is not None else contextlib.nullcontext()
+    with fp8_ctx, autocast_ctx, forward_ctx:
       out = model(enc, dec_in, enc_attn_mask=enc_mask, dec_attn_mask=dec_mask, labels=labels)
       loss_tensor = out['loss']
+
     step_metrics = out.get('metrics', {}) if isinstance(out, dict) else {}
-    if scaler is not None and scaler.is_enabled():
-      scaler.scale(loss_tensor).backward()
-      scaler.unscale_(optimizer)
-    else:
-      loss_tensor.backward()
+    backward_ctx = nvtx('backward') if nvtx is not None else contextlib.nullcontext()
+    with backward_ctx:
+      if scaler is not None and scaler.is_enabled():
+        scaler.scale(loss_tensor).backward()
+        scaler.unscale_(optimizer)
+      else:
+        loss_tensor.backward()
+
     if apply_clip and args.grad_clip > 0:
-      torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
-    if scaler is not None and scaler.is_enabled():
-      scaler.step(optimizer)
-      scaler.update()
-    else:
-      optimizer.step()
+      clip_ctx = nvtx('grad_clip') if nvtx is not None else contextlib.nullcontext()
+      with clip_ctx:
+        torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+
+    opt_ctx = nvtx('optimizer.step') if nvtx is not None else contextlib.nullcontext()
+    with opt_ctx:
+      if scaler is not None and scaler.is_enabled():
+        scaler.step(optimizer)
+        scaler.update()
+      else:
+        optimizer.step()
     return loss_tensor, step_metrics
 
   def clone_static_buffers(batch_tensors: Tuple[torch.Tensor, ...]) -> Tuple[torch.Tensor, ...]:
@@ -686,12 +799,17 @@ def main():
     for src, dst in zip(batch_tensors, static_buffers):
       dst.copy_(src)
 
-  def initialize_cuda_graph(batch_tensors: Tuple[torch.Tensor, ...]):
+  def initialize_cuda_graph(batch_tensors: Tuple[torch.Tensor, ...], fp8_enabled: bool):
     static_buffers = clone_static_buffers(batch_tensors)
     graph = torch.cuda.CUDAGraph()
     optimizer.zero_grad(set_to_none=True)
     with torch.cuda.graph(graph):
-      loss_tensor, metrics_dict = execute_step(*static_buffers)
+      loss_tensor, metrics_dict = execute_step(
+        *static_buffers,
+        nvtx=None,
+        fp8_context=fp8_context_factory,
+        fp8_enabled=fp8_enabled,
+      )
     metrics_dict = metrics_dict if isinstance(metrics_dict, dict) else {}
     return {
       'graph': graph,
@@ -708,9 +826,14 @@ def main():
   graphs_ready = False
   first_step_completed = not use_cuda_graphs
   graph_state = None
+  fp8_activation_announced = fp8_context_factory is None
 
   while global_step < total_steps:
-    batch_tensors = get_next_batch()
+    if nvtx_range.enabled and nvtx_include_data:
+      with nvtx_range('data.next_batch'):
+        batch_tensors = get_next_batch()
+    else:
+      batch_tensors = get_next_batch()
     global_step += 1
     current_lr = adjust_lr(global_step)
 
@@ -723,29 +846,53 @@ def main():
       else:
         model.gate_scale.fill_(1.0)
 
-    if use_cuda_graphs:
-      if not first_step_completed:
-        loss_tensor, step_metrics = execute_step(*batch_tensors)
-        first_step_completed = True
-      elif not graphs_ready:
-        try:
-          graph_state = initialize_cuda_graph(batch_tensors)
-          graphs_ready = True
+    fp8_step_enabled = fp8_context_factory is not None and global_step > fp8_warmup_steps
+    if fp8_context_factory is not None and not fp8_activation_announced and fp8_step_enabled:
+      console.print(f"[bold cyan]FP8 autocast enabled after {fp8_warmup_steps} warmup steps.[/bold cyan]")
+      fp8_activation_announced = True
+
+    step_ctx = nvtx_range('train.step') if nvtx_range.enabled else contextlib.nullcontext()
+    with step_ctx:
+      if use_cuda_graphs:
+        if not first_step_completed:
+          loss_tensor, step_metrics = execute_step(
+            *batch_tensors,
+            nvtx=nvtx_range,
+            fp8_context=fp8_context_factory,
+            fp8_enabled=fp8_step_enabled,
+          )
+          first_step_completed = True
+        elif not graphs_ready:
+          try:
+            graph_state = initialize_cuda_graph(batch_tensors, fp8_step_enabled)
+            graphs_ready = True
+            loss_tensor = graph_state['loss']
+            step_metrics = graph_state['metrics']
+          except RuntimeError as err:
+            console.print(f'[bold yellow]CUDA graph capture failed ({err}); falling back to eager execution.[/bold yellow]')
+            use_cuda_graphs = False
+            graphs_ready = False
+            graph_state = None
+            loss_tensor, step_metrics = execute_step(
+              *batch_tensors,
+              nvtx=nvtx_range,
+              fp8_context=fp8_context_factory,
+              fp8_enabled=fp8_step_enabled,
+            )
+        else:
+          copy_into_static(batch_tensors, graph_state['buffers'])
+          replay_ctx = nvtx_range('train.graph_replay') if nvtx_range.enabled else contextlib.nullcontext()
+          with replay_ctx:
+            graph_state['graph'].replay()
           loss_tensor = graph_state['loss']
           step_metrics = graph_state['metrics']
-        except RuntimeError as err:
-          console.print(f'[bold yellow]CUDA graph capture failed ({err}); falling back to eager execution.[/bold yellow]')
-          use_cuda_graphs = False
-          graphs_ready = False
-          graph_state = None
-          loss_tensor, step_metrics = execute_step(*batch_tensors)
       else:
-        copy_into_static(batch_tensors, graph_state['buffers'])
-        graph_state['graph'].replay()
-        loss_tensor = graph_state['loss']
-        step_metrics = graph_state['metrics']
-    else:
-      loss_tensor, step_metrics = execute_step(*batch_tensors)
+        loss_tensor, step_metrics = execute_step(
+          *batch_tensors,
+          nvtx=nvtx_range,
+          fp8_context=fp8_context_factory,
+          fp8_enabled=fp8_step_enabled,
+        )
 
     loss_val = float(loss_tensor.item())
     if not math.isfinite(loss_val):
@@ -806,7 +953,7 @@ def main():
       status_text = f'[grey58]eval step {global_step}/{total_steps} ({total_val_batches} batches)...[/grey58]'
       with console.status(status_text, spinner='line'):
         start_eval_time = time.time()
-        eval_ctx_factory = (lambda: torch.autocast(**autocast_kwargs)) if autocast_kwargs else (lambda: contextlib.nullcontext())
+        eval_fp8_enabled = fp8_context_factory is not None and global_step > fp8_warmup_steps
         with torch.no_grad():
           for batch_idx, batch in enumerate(iter_eval_batches(val_data, effective_eval_batch_size, pad_id), start=1):
             v_enc, v_dec_in, v_labels, v_enc_mask, v_dec_mask = batch
@@ -829,7 +976,10 @@ def main():
             v_labels = truncate_to_max_length(v_labels, effective_seq_len).to(device)
             v_enc_mask = truncate_to_max_length(v_enc_mask, effective_seq_len).to(device).bool()
             v_dec_mask = truncate_to_max_length(v_dec_mask, effective_seq_len).to(device).bool()
-            with eval_ctx_factory():
+            eval_autocast_ctx = torch.autocast(**autocast_kwargs) if autocast_kwargs else contextlib.nullcontext()
+            eval_fp8_ctx = fp8_context_factory(eval_fp8_enabled) if fp8_context_factory is not None else contextlib.nullcontext()
+            eval_nvtx_ctx = nvtx_range('eval.batch') if (nvtx_range.enabled and nvtx_include_eval) else contextlib.nullcontext()
+            with eval_fp8_ctx, eval_autocast_ctx, eval_nvtx_ctx:
               v_out = model(v_enc, v_dec_in, enc_attn_mask=v_enc_mask, dec_attn_mask=v_dec_mask, labels=v_labels)
             val_loss_sum += float(v_out['loss'].item())
             val_batches += 1

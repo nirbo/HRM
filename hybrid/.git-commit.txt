@@ -1,11 +1,11 @@
-Implemented defensive CUDA graph integration for MoE training.
+Introduce Nsight profiling hooks and FP8 training path via TransformerEngine.
 
 Summary of changes:
-- Documented new troubleshooting session and resolution steps inside llm.state and refreshed llm.state.bak backup.
-- Enabled CUDA graph usage flag in the default trainer config while allowing runtime auto-disable when unsupported.
-- Tagged encoder backends (Mamba2 and MoE Transformer) as graph-incompatible and propagated capability metadata through HRMLanguageModel.
-- Adjusted MoE feed-forward routing to drop host-side `mask.any()` checks in favor of capture-friendly tensor indexing.
-- Hardened the training loop: early eager warmup, guarded graph initialization with graceful fallback to eager execution, and preserved logging when graphs are unavailable.
+- Extended trainer config with profiling/FP8 options; added NVTX range manager and Nsight capture scaffolding (including new `scripts/capture_nsight.py`).
+- Integrated TransformerEngine Linear layers across transformer/MoE feed-forwards, wired fp8_autocast warmup + recipe handling, and updated training loop for FP8-aware execution.
+- Added NVTX instrumentation around data loading, forward/backward, optimizer steps, and evaluation passes with configurable scope.
+- Updated CUDA.md roadmap to reflect new implementations and documented operational checklists, plus refreshed default.yaml for profiling/fp8 knobs.
+- Logged progress in llm.state / backup and ensured Python bytecode compilation checks succeed.
 
 Testing & validation:
-- `python -m compileall src/hrm_lm/models/encoder.py src/hrm_lm/models/hybrid.py src/hrm_lm/models/transformer_layers.py src/hrm_lm/training/train.py`
+- `python -m compileall src/hrm_lm/training/train.py src/hrm_lm/models/transformer_layers.py src/hrm_lm/models/encoder.py scripts/capture_nsight.py`

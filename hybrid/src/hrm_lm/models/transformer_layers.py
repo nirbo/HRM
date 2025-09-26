@@ -1,10 +1,32 @@
 # minimal Transformer encoder/decoder with optional MoE feed-forward
 import math
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+try:  # TransformerEngine is optional; only required for FP8 execution
+  import transformer_engine.pytorch as te  # type: ignore
+except ImportError:  # pragma: no cover - runtime guard when TE is absent
+  te = None
+
+
+def _make_linear(
+  in_features: int,
+  out_features: int,
+  *,
+  bias: bool = False,
+  use_fp8: bool = False,
+  fp8_kwargs: Optional[Dict] = None,
+) -> nn.Module:
+  if use_fp8:
+    if te is None:
+      raise RuntimeError('TransformerEngine is required for FP8 linear layers but is not installed.')
+    kwargs = dict(fp8_kwargs or {})
+    kwargs.setdefault('params_dtype', torch.float32)
+    return te.Linear(in_features, out_features, bias=bias, **kwargs)
+  return nn.Linear(in_features, out_features, bias=bias)
 
 
 class PositionalEncoding(nn.Module):
@@ -31,6 +53,8 @@ class MoEFeedForward(nn.Module):
     top_k: int = 1,
     capacity_factor: float = 1.25,
     dropout: float = 0.0,
+    use_fp8: bool = False,
+    fp8_linear_kwargs: Optional[Dict] = None,
   ) -> None:
     super().__init__()
     self.num_experts = num_experts
@@ -39,12 +63,16 @@ class MoEFeedForward(nn.Module):
     self.hidden_dim = hidden_dim
 
     self.gate = nn.Linear(d_model, num_experts, bias=False)
-    expert = lambda: nn.Sequential(
-      nn.Linear(d_model, hidden_dim, bias=False),
-      nn.GELU(),
-      nn.Linear(hidden_dim, d_model, bias=False),
-    )
-    self.experts = nn.ModuleList(expert() for _ in range(num_experts))
+    linear_kwargs = fp8_linear_kwargs or {}
+
+    def build_expert():
+      return nn.Sequential(
+        _make_linear(d_model, hidden_dim, bias=False, use_fp8=use_fp8, fp8_kwargs=linear_kwargs),
+        nn.GELU(),
+        _make_linear(hidden_dim, d_model, bias=False, use_fp8=use_fp8, fp8_kwargs=linear_kwargs),
+      )
+
+    self.experts = nn.ModuleList(build_expert() for _ in range(num_experts))
     self.dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
 
   def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -89,6 +117,8 @@ class TransformerEncoderBlock(nn.Module):
     dropout: float,
     use_moe: bool = False,
     moe_cfg: Optional[dict] = None,
+    use_fp8: bool = False,
+    fp8_cfg: Optional[dict] = None,
   ) -> None:
     super().__init__()
     self.self_attn = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
@@ -96,6 +126,7 @@ class TransformerEncoderBlock(nn.Module):
     self.norm2 = nn.LayerNorm(d_model)
     self.dropout1 = nn.Dropout(dropout)
     self.dropout2 = nn.Dropout(dropout)
+    fp8_linear_kwargs = fp8_cfg.get('linear_kwargs', {}) if (use_fp8 and isinstance(fp8_cfg, dict)) else {}
 
     if use_moe:
       moe_cfg = moe_cfg or {}
@@ -111,14 +142,16 @@ class TransformerEncoderBlock(nn.Module):
         top_k=top_k,
         capacity_factor=capacity_factor,
         dropout=moe_dropout,
+        use_fp8=use_fp8,
+        fp8_linear_kwargs=fp8_linear_kwargs,
       )
       self.ff_is_moe = True
     else:
       self.ff = nn.Sequential(
-        nn.Linear(d_model, dim_feedforward, bias=False),
+        _make_linear(d_model, dim_feedforward, bias=False, use_fp8=use_fp8, fp8_kwargs=fp8_linear_kwargs),
         nn.GELU(),
         nn.Dropout(dropout),
-        nn.Linear(dim_feedforward, d_model, bias=False),
+        _make_linear(dim_feedforward, d_model, bias=False, use_fp8=use_fp8, fp8_kwargs=fp8_linear_kwargs),
       )
       self.ff_is_moe = False
 
@@ -148,6 +181,8 @@ class TransformerEncoder(nn.Module):
     dropout: float = 0.0,
     use_moe: bool = False,
     moe_cfg: Optional[dict] = None,
+    use_fp8: bool = False,
+    fp8_cfg: Optional[dict] = None,
   ) -> None:
     super().__init__()
     dim_feedforward = int(4 * d_model)
@@ -159,11 +194,15 @@ class TransformerEncoder(nn.Module):
         dropout,
         use_moe=use_moe,
         moe_cfg=moe_cfg,
+        use_fp8=use_fp8,
+        fp8_cfg=fp8_cfg,
       )
       for _ in range(n_layers)
     )
     self.norm = nn.LayerNorm(d_model)
     self.use_moe = use_moe
+    self.use_fp8 = use_fp8
+    self.fp8_cfg = fp8_cfg or {}
 
   def forward(self, x: torch.Tensor, src_key_padding_mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     aux_loss = None

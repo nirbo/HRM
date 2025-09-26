@@ -13,6 +13,9 @@ class LMEncoder(nn.Module):
     encoder_cfg = encoder_cfg or {}
     self.supports_cuda_graphs = True  # assume CUDA graph support unless a backend opts out explicitly
     self.moe_aux_weight = float(encoder_cfg.get('moe', {}).get('aux_loss_weight', 0.0))
+    fp8_cfg = encoder_cfg.pop('fp8', {}) if 'fp8' in encoder_cfg else {}
+    self.fp8_enabled = bool(fp8_cfg.get('enabled', False))
+    self.fp8_cfg = fp8_cfg if self.fp8_enabled else {}
     if backend == 'mamba2':
       self.enc = MambaStack(d_model, n_layers)
       self.moe_aux_weight = 0.0
@@ -27,6 +30,8 @@ class LMEncoder(nn.Module):
         dropout=float(moe_cfg.get('dropout', 0.0)) if use_moe else 0.0,
         use_moe=use_moe,
         moe_cfg=moe_cfg if use_moe else None,
+        use_fp8=self.fp8_enabled,
+        fp8_cfg=self.fp8_cfg,
       )
       if not use_moe:
         self.moe_aux_weight = 0.0

@@ -50,3 +50,18 @@ train:
   mixed_precision: bf16
   enable_tf32: true
   use_cuda_graphs: true
+  fp8:
+    enabled: false
+    warmup_steps: 512
+    format: e4m3  # e4m3 | e5m2
+    recipe:
+      margin: 0
+      interval: 1
+      amax_history_len: 16
+      amax_compute_algo: max
+
+profiling:
+  nvtx:
+    enabled: false
+    include_data: true
+    include_eval: true
