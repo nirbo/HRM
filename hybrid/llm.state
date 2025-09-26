@@ -1252,6 +1252,8 @@
 - 2025-09-26T02:59Z: Replaced RWKV stack with CUDA-backed implementation (falls back to PyTorch loop when unavailable).
 - 2025-09-26T03:00Z: Built/loaded wkv6 extension and ran rwkv6 dry-run (loss≈11.93) using CUDA kernels.
 - 2025-09-26T03:06Z: Adjusted RWKV backward path to write gradients in BF16 buffers before casting, removing dtype runtime error.
+- 2025-09-26T03:57Z: User requested RWKV backend removal; preparing rollback of related code.
+- 2025-09-26T03:58Z: Removed RWKV backend files and reverted encoder/config/CLI changes per user request.
 
 
 ### Pending Steps
@@ -1271,19 +1273,16 @@
 - RWKV-6 stack module added and encoder backend selection extended.
 - GPU replay of step_003990 batch now yields finite loss (~5.18) with gate still closed, confirming padding fix.
 - RWKV-6 backend passes dry-run with finite loss, confirming integration path.
-- RWKV backend now uses fused CUDA kernels when available (fallback to PyTorch loop).
 - Verified fast path via dry-run; Mamba padding guard remains in place (GPU replay finite).
+- RWKV backend removed; encoder now supports transformer or mamba2 only.
 
 
 ### Open Issues
-- Monitor long-context RWKV runs; rebuild kernels if head size or max sequence length changes.
-- Benchmark RWKV CUDA throughput vs Mamba2 on target workloads.
+- None at this time.
 
 
 ### Task Completion Summary
 - Gathered guard artifacts; confirmed only loss tensor is NaN while inputs/masks remain finite.
 - Identified Mamba selective-scan uses kernel width 4 (`src/hrm_lm/models/mamba2_layers.py:15`) and offending batch contains <=2-token sequences, implicating fast-path instability on short contexts.
 - Documented mitigation options (pad/drop short samples or bypass fast path) and noted GPU replay required for final confirmation.
-- Added RWKV-6 backend with CLI/config hooks and documented selection workflow; dry-run confirms integration.
-- Ported RWKV-6 time-mix layer to use BlinkDL CUDA kernels with safe PyTorch fallback; dry-run confirms fast path.
-- Vendored RWKV CUDA sources and ensured ENV build path works with PATH/TORCH_CUDA_ARCH_LIST settings.
+- RWKV backend removed; documentation and configs now reflect transformer/mamba2 only.

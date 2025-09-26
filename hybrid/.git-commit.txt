@@ -1,7 +1,10 @@
-Title: Log RWKV backward fix in statefile
+Title: Remove RWKV backend integration
 
 Summary:
-- Record the RWKV gradient dtype fix in `llm.state` for future traceability.
+- Delete the RWKV encoder implementation and vendored CUDA kernels, reverting the encoder stack to transformer/mamba2 options only.
+- Drop the `--encoder_backend` CLI flag and tighten config validation so unsupported backends raise early.
+- Trim documentation and config comments to reflect the supported backends and update the state log accordingly.
+- Verified trainer dry-run succeeds after removal (`PYTHONPATH=src ./venv/bin/python -m hrm_lm.training.train --dry_run`).
 
 Testing:
-- not run (documentation update only)
+- PYTHONPATH=src ./venv/bin/python -m hrm_lm.training.train --dry_run

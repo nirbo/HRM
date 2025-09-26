@@ -5,7 +5,7 @@ model:
   n_heads: 8
   dropout: 0.0
   encoder:
-    backend: rwkv6  # transformer | mamba2 | rwkv6
+    backend: mamba2  # transformer | mamba2
     n_layers: 8
     max_seq_len: 2048
   decoder:

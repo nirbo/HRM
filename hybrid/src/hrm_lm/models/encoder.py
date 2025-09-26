@@ -1,9 +1,8 @@
-# LM encoder (Transformer / Mamba2 / RWKV6)
+# LM encoder (Transformer or Mamba2)
 import torch  # tensor ops
 import torch.nn as nn  # neural network layers
 from .transformer_layers import PositionalEncoding, TransformerEncoder  # transformer encoder building blocks
 from .mamba2_layers import MambaStack  # optional Mamba2 stack
-from .rwkv6_layers import RWKV6Stack  # optional RWKV-6 stack
 
 class LMEncoder(nn.Module):
   def __init__(self, vocab_size, d_model, n_layers, max_seq_len, backend='transformer'):
@@ -13,8 +12,6 @@ class LMEncoder(nn.Module):
     self.backend = backend
     if backend == 'mamba2':
       self.enc = MambaStack(d_model, n_layers)
-    elif backend == 'rwkv6':
-      self.enc = RWKV6Stack(d_model, n_layers, n_heads=8, max_seq_len=max_seq_len)
     else:
       self.enc = TransformerEncoder(d_model, n_heads=8, n_layers=n_layers, dropout=0.0)
     self.norm = nn.LayerNorm(d_model)
