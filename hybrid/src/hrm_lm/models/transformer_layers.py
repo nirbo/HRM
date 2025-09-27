@@ -135,6 +135,8 @@ class TransformerEncoderBlock(nn.Module):
     fp8_linear_kwargs = fp8_cfg.get('linear_kwargs', {}) if (use_fp8 and isinstance(fp8_cfg, dict)) else {}
 
     if use_moe:
+      if use_fp8:
+        warnings.warn('FP8 MoE experts not supported; falling back to high-precision experts.', RuntimeWarning)
       moe_cfg = moe_cfg or {}
       num_experts = int(moe_cfg.get('num_experts', 4))
       top_k = int(moe_cfg.get('top_k', 1))
@@ -148,8 +150,8 @@ class TransformerEncoderBlock(nn.Module):
         top_k=top_k,
         capacity_factor=capacity_factor,
         dropout=moe_dropout,
-        use_fp8=use_fp8,
-        fp8_linear_kwargs=fp8_linear_kwargs,
+        use_fp8=False,
+        fp8_linear_kwargs=None,
       )
       self.ff_is_moe = True
     else:

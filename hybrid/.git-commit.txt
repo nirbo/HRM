@@ -1,9 +1,12 @@
-Make TransformerEngine optional and add helper script for FP8 setup.
+Enable FP8 transformer training and allocator tuning.
 
 Summary of changes:
-- Updated transformer layers to catch any TransformerEngine import failure and emit a runtime warning instead of crashing; BF16 runs continue unaffected.
-- Trainer now persists the effective mixed-precision mode back into the config and disables the fp8 block whenever FP8 isn’t requested, keeping configs consistent.
-- Added `scripts/install_transformer_engine.sh` to set cuDNN include/lib paths and reinstall TransformerEngine quickly after installing the cuDNN wheel.
+- Added FP8-ready config (`src/hrm_lm/configs/fp8.yaml`) and deleted obsolete `stage_b.yaml`.
+- Transformer layers now guard TransformerEngine imports, disable FP8 inside MoE experts, and pad batches to satisfy FP8 shape constraints.
+- Trainer updates: enforce CUDA allocator setting, pad sequences, expose raw gradient norms, and log state changes.
+- Generation CLI sets the allocator env var for consistency.
+- Statefile updated with FP8/Nsight progress entries.
 
 Testing & validation:
-- `python -m compileall src/hrm_lm/training/train.py src/hrm_lm/models/transformer_layers.py scripts/install_transformer_engine.sh`
+- `python -m compileall src/hrm_lm/training/train.py src/hrm_lm/models/transformer_layers.py src/hrm_lm/inference/generate.py`
+- FP8 training run (batch 12, seq 512) no longer crashes once batch is padded.

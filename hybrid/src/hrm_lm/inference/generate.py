@@ -15,6 +15,9 @@ from hrm_lm.training.train import make_model  # model builder
 from hrm_lm.data.simple_tokenizer import BOS_ID, EOS_ID, SimpleTokenizer  # tokenizer utilities
 from hrm_lm.data.synthetic import build_synthetic_dataset  # synthetic tokenizer builder
 
+if 'PYTORCH_CUDA_ALLOC_CONF' not in os.environ:
+  os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+
 DEFAULT_DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'  # prefer GPU when available for generation
 
 def resolve_device(requested: Optional[str]) -> torch.device:

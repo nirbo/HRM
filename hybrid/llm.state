@@ -1449,3 +1449,4 @@
 - 2025-09-26T23:30Z: Integrated TransformerEngine FP8 path (config plumbing, module swaps, warmup handling) with training loop support.
 - 2025-09-26T23:30Z: Ran python -m compileall on updated modules to validate syntax.
 - 2025-09-26T23:30Z: Backed up statefile after Nsight/FP8 integration.
+- 2025-09-27T01:59Z: Added TE import guard, trainer MP back-fill, and install helper script; committed.- 2025-09-27T02:20Z: Forced PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True in trainer and generator to reduce allocator fragmentation.

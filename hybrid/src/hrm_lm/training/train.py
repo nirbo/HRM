@@ -26,7 +26,7 @@ try:
 except ImportError:  # torch.profiler optional depending on build
   record_function = None
 
-os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 warnings.filterwarnings('ignore', message='.*Nested Tensor.*')
 console = Console(highlight=False)
@@ -642,6 +642,8 @@ def main():
   if fp8_requested:
     try:
       import transformer_engine.pytorch as te  # type: ignore
+      from transformer_engine.pytorch import fp8 as te_fp8  # type: ignore
+      from transformer_engine.common.recipe import DelayedScaling, Format  # type: ignore
     except ImportError as exc:
       raise ImportError('TransformerEngine is required for fp8 mixed precision. Install via `pip install transformer-engine`.') from exc
     fp8_cfg_container = OmegaConf.to_container(getattr(cfg.train, 'fp8', {}), resolve=True)
@@ -651,7 +653,7 @@ def main():
     format_str = str(fp8_cfg_container.get('format', 'e4m3')).lower()
     if format_str not in {'e4m3', 'e5m2'}:
       raise ValueError(f"Unsupported FP8 format '{format_str}'. Choose 'e4m3' or 'e5m2'.")
-    fp8_format = te.FP8Format.E4M3 if format_str == 'e4m3' else te.FP8Format.E5M2
+    fp8_format = Format.E4M3 if format_str == 'e4m3' else Format.E5M2
     recipe_cfg = fp8_cfg_container.get('recipe', {}) or {}
     recipe_kwargs = {
       'fp8_format': fp8_format,
@@ -660,10 +662,10 @@ def main():
       'amax_history_len': int(recipe_cfg.get('amax_history_len', 16) or 16),
       'amax_compute_algo': str(recipe_cfg.get('amax_compute_algo', 'max')),
     }
-    fp8_recipe = te.DelayedScaling(**recipe_kwargs)
+    fp8_recipe = DelayedScaling(**recipe_kwargs)
 
     def fp8_context(enabled: bool):
-      return te.fp8_autocast(enabled=bool(enabled), recipe=fp8_recipe)
+      return te.fp8_autocast(enabled=bool(enabled), fp8_recipe=fp8_recipe)
 
     fp8_context_factory = fp8_context
     use_autocast = False
@@ -736,6 +738,16 @@ def main():
   def truncate_to_max_length(tensor: torch.Tensor, length: int) -> torch.Tensor:
     return tensor[:, :length] if tensor.size(1) > length else tensor
 
+  def pad_to_length(tensor: torch.Tensor, length: int, value) -> torch.Tensor:
+    current = tensor.size(1)
+    if current >= length:
+      return tensor
+    pad_shape = (tensor.size(0), length - current) + tensor.shape[2:]
+    pad_tensor = tensor.new_full(pad_shape, value)
+    return torch.cat([tensor, pad_tensor], dim=1)
+
+  label_pad_value = -100
+
   consecutive_eval_increase = 0  # Count consecutive times validation loss increases.
   last_eval_loss: Optional[float] = None  # Remember the previous validation loss for comparison.
   early_stop_triggered = False  # Flag to break out of training when patience is exhausted.
@@ -743,11 +755,11 @@ def main():
   def get_next_batch() -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     batch = next(iterator)
     b_enc, b_dec_in, b_labels, b_enc_mask, b_dec_mask = batch
-    b_enc = truncate_to_max_length(b_enc, effective_seq_len).to(device)
-    b_dec_in = truncate_to_max_length(b_dec_in, effective_seq_len).to(device)
-    b_labels = truncate_to_max_length(b_labels, effective_seq_len).to(device)
-    b_enc_mask = truncate_to_max_length(b_enc_mask, effective_seq_len).to(device).bool()
-    b_dec_mask = truncate_to_max_length(b_dec_mask, effective_seq_len).to(device).bool()
+    b_enc = pad_to_length(truncate_to_max_length(b_enc, effective_seq_len), effective_seq_len, pad_id).to(device)
+    b_dec_in = pad_to_length(truncate_to_max_length(b_dec_in, effective_seq_len), effective_seq_len, pad_id).to(device)
+    b_labels = pad_to_length(truncate_to_max_length(b_labels, effective_seq_len), effective_seq_len, label_pad_value).to(device)
+    b_enc_mask = pad_to_length(truncate_to_max_length(b_enc_mask, effective_seq_len), effective_seq_len, False).to(device).bool()
+    b_dec_mask = pad_to_length(truncate_to_max_length(b_dec_mask, effective_seq_len), effective_seq_len, False).to(device).bool()
     return b_enc, b_dec_in, b_labels, b_enc_mask, b_dec_mask
 
   def execute_step(
@@ -782,6 +794,8 @@ def main():
       else:
         loss_tensor.backward()
 
+    raw_grad_norm = gradient_norm(model)
+
     if apply_clip and args.grad_clip > 0:
       clip_ctx = nvtx('grad_clip') if nvtx is not None else contextlib.nullcontext()
       with clip_ctx:
@@ -794,6 +808,8 @@ def main():
         scaler.update()
       else:
         optimizer.step()
+    step_metrics = dict(step_metrics) if step_metrics else {}
+    step_metrics['grad_norm_raw'] = raw_grad_norm
     return loss_tensor, step_metrics
 
   def clone_static_buffers(batch_tensors: Tuple[torch.Tensor, ...]) -> Tuple[torch.Tensor, ...]:
@@ -920,7 +936,7 @@ def main():
     eta = format_eta(time_per_step * (total_steps - global_step))
     speed = format_speed(time_per_step)
     metrics = step_metrics if isinstance(step_metrics, dict) else {}
-    raw_grad_norm = grad_norm
+    raw_grad_norm = metrics.pop('grad_norm_raw', grad_norm)
 
     if global_step % log_steps == 0 or global_step == total_steps:
       parts = [
