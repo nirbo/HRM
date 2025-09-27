@@ -1,12 +1,7 @@
-Enable FP8 transformer training and allocator tuning.
+Adjust FP8 config halting weight.
 
 Summary of changes:
-- Added FP8-ready config (`src/hrm_lm/configs/fp8.yaml`) and deleted obsolete `stage_b.yaml`.
-- Transformer layers now guard TransformerEngine imports, disable FP8 inside MoE experts, and pad batches to satisfy FP8 shape constraints.
-- Trainer updates: enforce CUDA allocator setting, pad sequences, expose raw gradient norms, and log state changes.
-- Generation CLI sets the allocator env var for consistency.
-- Statefile updated with FP8/Nsight progress entries.
+- Raised `train.model.hrm.halting_weight` to 0.05 in `src/hrm_lm/configs/fp8.yaml` for the current FP8 prototype run.
 
 Testing & validation:
-- `python -m compileall src/hrm_lm/training/train.py src/hrm_lm/models/transformer_layers.py src/hrm_lm/inference/generate.py`
-- FP8 training run (batch 12, seq 512) no longer crashes once batch is padded.
+- Config-only change; reused existing FP8 training run.
