@@ -29,10 +29,10 @@ model:
     l_steps: 8
     approx_grad: one_step  # one_step | bptt
     use_halting: true
-    halting_weight: 0.2
-    halting_target: 5.0
-    gate_scale: 5.0
-    gate_bias: 0.0
+    halting_weight: 0.05
+    halting_target: 3.0
+    gate_scale: 2.0
+    gate_bias: 0.02
     out_dim: 512
     deep_supervision: false
     ds_weight: 0.2
