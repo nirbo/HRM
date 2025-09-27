@@ -62,8 +62,16 @@ class HRMLanguageModel(nn.Module):
       self.hrm2dec = HRMToCrossAttnBridge(d_model)
     self.decoder = LMDecoder(vocab_size, d_model, dec_layers, max_dec_len)
     self.hrm_gate = HRMGate(d_model)
+    gate_scale_cfg = float(hrm_cfg.get("gate_scale", 1.0))
+    gate_bias_cfg = float(hrm_cfg.get("gate_bias", 0.0))
     self.register_buffer(
-      "gate_scale", torch.tensor(1.0, dtype=torch.float32)
+      "gate_scale_base", torch.tensor(gate_scale_cfg, dtype=torch.float32)
+    )
+    self.register_buffer(
+      "gate_scale", torch.tensor(gate_scale_cfg, dtype=torch.float32)
+    )
+    self.register_buffer(
+      "gate_bias", torch.tensor(gate_bias_cfg, dtype=torch.float32)
     )
     self.supports_cuda_graphs = bool(getattr(self.encoder, 'supports_cuda_graphs', True))  # expose encoder capture capability to the trainer
 
@@ -84,10 +92,11 @@ class HRMLanguageModel(nn.Module):
       aux = None
 
     gate_scale = self.gate_scale.to(dtype=z.dtype, device=z.device)
+    gate_bias = self.gate_bias.to(dtype=z.dtype, device=z.device)
     gate_raw = torch.nan_to_num(
       self.hrm_gate(z), nan=0.0, posinf=1.0, neginf=0.0
     )
-    gate = (gate_scale * gate_raw).view(-1, 1, 1)
+    gate = (gate_scale * gate_raw + gate_bias).view(-1, 1, 1)
     gate = torch.clamp(gate, 0.0, 1.0)
     gate_strength = (
       gate.mean().detach().to(torch.float32).clamp_(0.0, 1.0)

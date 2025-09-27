@@ -1,7 +1,10 @@
-Adjust FP8 config halting weight.
+Expose HRM gate scale/bias controls and respect config defaults.
 
 Summary of changes:
-- Raised `train.model.hrm.halting_weight` to 0.05 in `src/hrm_lm/configs/fp8.yaml` for the current FP8 prototype run.
+- HRMLanguageModel now stores configurable gate scale/bias (with base copies) and applies them to the HRM gate output.
+- Training loop restores the configured gate scale after warmup instead of hard-coding 1.0.
+- Added `gate_scale`/`gate_bias` fields to the default, FP8, and MoE configs so runs can tune these knobs.
+- Updated statefile to record the change.
 
 Testing & validation:
-- Config-only change; reused existing FP8 training run.
+- `python -m compileall src/hrm_lm/models/hybrid.py src/hrm_lm/training/train.py`

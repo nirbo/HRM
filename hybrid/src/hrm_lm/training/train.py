@@ -858,13 +858,15 @@ def main():
     current_lr = adjust_lr(global_step)
 
     if hasattr(model, 'gate_scale'):
+      base_scale = getattr(model, 'gate_scale_base', None)
+      target_scale = base_scale if base_scale is not None else model.gate_scale
       if gate_warmup > 0:
         if global_step <= gate_warmup:
           model.gate_scale.fill_(0.0)
         else:
-          model.gate_scale.fill_(1.0)
+          model.gate_scale.copy_(target_scale)
       else:
-        model.gate_scale.fill_(1.0)
+        model.gate_scale.copy_(target_scale)
 
     fp8_step_enabled = fp8_context_factory is not None and global_step > fp8_warmup_steps
     if fp8_context_factory is not None and not fp8_activation_announced and fp8_step_enabled:
