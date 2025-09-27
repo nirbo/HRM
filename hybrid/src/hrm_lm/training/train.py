@@ -523,6 +523,10 @@ def main():
   if args.mixed_precision == 'none':
     args.mixed_precision = str(getattr(cfg.train, 'mixed_precision', 'none'))
 
+  cfg.train.mixed_precision = args.mixed_precision
+  if args.mixed_precision.lower() != 'fp8' and hasattr(cfg.train, 'fp8'):
+    cfg.train.fp8.enabled = False
+
 
   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
   effective_batch_size = args.batch_size if args.batch_size is not None else cfg.train.batch_size

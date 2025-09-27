@@ -1,11 +1,9 @@
-Introduce Nsight profiling hooks and FP8 training path via TransformerEngine.
+Make TransformerEngine optional and add helper script for FP8 setup.
 
 Summary of changes:
-- Extended trainer config with profiling/FP8 options; added NVTX range manager and Nsight capture scaffolding (including new `scripts/capture_nsight.py`).
-- Integrated TransformerEngine Linear layers across transformer/MoE feed-forwards, wired fp8_autocast warmup + recipe handling, and updated training loop for FP8-aware execution.
-- Added NVTX instrumentation around data loading, forward/backward, optimizer steps, and evaluation passes with configurable scope.
-- Updated CUDA.md roadmap to reflect new implementations and documented operational checklists, plus refreshed default.yaml for profiling/fp8 knobs.
-- Logged progress in llm.state / backup and ensured Python bytecode compilation checks succeed.
+- Updated transformer layers to catch any TransformerEngine import failure and emit a runtime warning instead of crashing; BF16 runs continue unaffected.
+- Trainer now persists the effective mixed-precision mode back into the config and disables the fp8 block whenever FP8 isn’t requested, keeping configs consistent.
+- Added `scripts/install_transformer_engine.sh` to set cuDNN include/lib paths and reinstall TransformerEngine quickly after installing the cuDNN wheel.
 
 Testing & validation:
-- `python -m compileall src/hrm_lm/training/train.py src/hrm_lm/models/transformer_layers.py src/hrm_lm/models/encoder.py scripts/capture_nsight.py`
+- `python -m compileall src/hrm_lm/training/train.py src/hrm_lm/models/transformer_layers.py scripts/install_transformer_engine.sh`

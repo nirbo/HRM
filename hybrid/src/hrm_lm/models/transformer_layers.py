@@ -1,5 +1,6 @@
 # minimal Transformer encoder/decoder with optional MoE feed-forward
 import math
+import warnings
 from typing import Dict, Optional, Tuple
 
 import torch
@@ -8,8 +9,13 @@ import torch.nn.functional as F
 
 try:  # TransformerEngine is optional; only required for FP8 execution
   import transformer_engine.pytorch as te  # type: ignore
-except ImportError:  # pragma: no cover - runtime guard when TE is absent
+except (ImportError, OSError, FileNotFoundError) as exc:  # pragma: no cover - runtime guard when TE is absent
   te = None
+  warnings.warn(
+    f"TransformerEngine import failed ({exc}); FP8 layers will be unavailable until the extension is installed.",
+    RuntimeWarning,
+    stacklevel=2,
+  )
 
 
 def _make_linear(
