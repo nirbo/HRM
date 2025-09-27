@@ -7,7 +7,7 @@ This document tracks GPU-focused optimisation work for the HRM/MoE trainer. It s
 | Initiative | Status | Priority | Expected Benefit | Key Requirements |
 | --- | --- | --- | --- | --- |
 | Nsight Systems + Nsight Compute profiling baseline | Implemented (testing pending) | **Critical** | Establish kernel-level timeline and hotspot ranking to guide all downstream work | Install Nsight tooling, integrate trace capture hooks in trainer, capture representative training/eval runs |
-| FP8 training via TransformerEngine (Blackwell-ready) | Implemented (testing pending) | **Critical** | 1.4×–2.0× throughput gains and ~40–60% activation memory reduction on Hopper/Blackwell FP8 tensor cores | Hopper/Blackwell GPU, CUDA ≥12.2, TransformerEngine install, FP8 scaling calibration, checkpoint scale metadata |
+| FP8 training via TransformerEngine (Blackwell-ready) | Implemented (testing pending) | **Critical** | 1.4×–2.0× throughput gains; modest memory savings once activations dominate | Hopper/Blackwell GPU, CUDA ≥12.2, TransformerEngine install, FP8 scaling calibration, checkpoint scale metadata |
 | CUDA graph capture of forward/backward/optimizer | Implemented (testing pending) | High | Removes Python launch overhead; NVIDIA reports 1.1×–1.7× overall speedups and up to 5× within graphed regions | Static shapes, no host syncs during capture, persistent buffers, post-capture regression test |
 | CUTLASS expert feed-forward kernels (`nvidia-cutlass`) | Planned | High | Tensor-core optimised GEMMs for MoE/FFN blocks; potential 20–40% speedup on expert matmuls | CUTLASS python bindings, Nsight hotspot data, custom PyTorch extension glue |
 | cuSPARSELt structured sparsity (2:4) | Planned | Medium-High | Exploit structured sparse weights for additional 1.3×–1.6× GEMM speedups if experts adopt 2:4 sparsity | Prune/finetune to 2:4 pattern, integrate cuSPARSELt API, sparsity-aware optimizer updates |
@@ -40,9 +40,10 @@ We still need quantitative evidence before deeper kernel work. Nsight Systems su
 ## 2. FP8 Training with TransformerEngine (Critical)
 
 **Current status**  
-- Transformer encoder FFNs/MoE experts swap to `TransformerEngine.Linear` when `train.mixed_precision=fp8`.  
-- Training loop manages warmup, `DelayedScaling` recipe, FP8 autocast, and checkpoint metadata automatically.  
-- Logging announces the FP8 activation point; FP8 metrics now flow through the existing loss prints.
+- Transformer encoder FFNs switch to `TransformerEngine.Linear` when `train.mixed_precision=fp8`; MoE experts automatically fall back to BF16 to avoid TE’s FP8 shape constraints.  
+- Training loop pads batches to the configured `seq_len` so FP8 kernels see token counts divisible by 8/16, manages warmup/`DelayedScaling`, and records checkpoint metadata automatically.  
+- CUDA graphs are auto-disabled for FP8 runs (TE is not capture-safe yet). Logging announces the FP8 activation point and now surfaces both clipped and raw gradient norms.  
+- VRAM usage is broadly comparable to BF16 (FP8 activations + BF16 master weights/optimizer states); throughput improves thanks to higher tensor-core utilisation.
 
 **Why now**  
 RTX 5090 (Blackwell) exposes FP8 tensor cores. TransformerEngine (TE) demonstrates 1.4×–2.0× throughput gains and roughly 40–60% activation memory reductions when transformers shift from BF16 to FP8 on Hopper/Blackwell GPUs.[3][4]
@@ -54,9 +55,9 @@ RTX 5090 (Blackwell) exposes FP8 tensor cores. TransformerEngine (TE) demonstr
 
 **Operational checklist**
 1. Install `transformer-engine` matching the CUDA toolkit if it is not already present.
-2. Set `train.mixed_precision: fp8` (and adjust `train.fp8.*` as needed) to enable FP8 plus warmup/recipe handling.
-3. Monitor the console message confirming FP8 activation after warmup and verify loss parity against the BF16 baseline on a short run.
-4. Capture throughput/memory telemetry (via Nsight + `torch.cuda.memory_summary`) to quantify benefits before promoting FP8 to broader configs.
+2. Set `train.mixed_precision: fp8` (and adjust `train.fp8.*` as needed); keep MoE disabled or accept BF16 experts until TE supports routed FP8 kernels.
+3. Watch for the “FP8 autocast enabled…” banner and monitor raw gradient norms to confirm healthy scaling.
+4. Profile throughput/memory (Nsight Systems/Compute + `torch.cuda.memory_summary`) against the BF16 baseline; expect speedups but only modest VRAM savings.
 
 **Deliverables**
 - Updated trainer/config enabling FP8 safely on Blackwell.
@@ -121,6 +122,17 @@ If future datasets add heavy CPU preprocessing or multimodal augmentation, GPU-s
 1. Benchmark dataloader CPU utilisation after FP8 rollout. If it exceeds ~80%, prototype DALI pipelines for the busiest modalities.
 2. Adopt RAPIDS cuDF/cuML for large-scale preprocessing where appropriate.
 3. Gate additions behind config flags so lightweight text-only runs remain unaffected.
+
+## 7. Allocator & Tensor-Core Hygiene (Supporting)
+
+**Current status**  
+- Trainer and generator now set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` by default, reducing fragmentation during long FP8 runs.  
+- TF32 remains enabled by default for BF16/FP8 paths; MoE continues in BF16 where needed.  
+- No asynchronous allocator experiments yet (cudaMallocAsync / pluggable NCCL allocators still backlog items).
+
+**Next actions**
+1. Monitor long FP8 runs for residual fragmentation; if issues remain, prototype cudaMallocAsync or the PyTorch pluggable allocator API.  
+2. When multi-GPU training arrives, profile NCCL behaviour and decide whether a custom allocator is warranted.
 
 ## Phased Execution Plan (Updated)
 

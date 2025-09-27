@@ -1,8 +1,5 @@
-Fix HRM config indentation.
+Default HRM config fallbacks.
 
 Summary of changes:
-- Nested approx_grad/halting/gate parameters back under model.hrm in default, fp8, and moe configs so the settings load correctly.
-- Logged the correction in the statefile.
-
-Testing & validation:
-- Config-only change.
+- HRMLanguageModel now reads HRM config via dict.get with sensible defaults, avoiding KeyErrors when older configs are missing fields.
+- Updated CUDA.md FP8 section/state to mention padding and BF16 expert fallback.

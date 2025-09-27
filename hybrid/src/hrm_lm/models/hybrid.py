@@ -39,14 +39,14 @@ class HRMLanguageModel(nn.Module):
     use_halting = hrm_cfg.get("use_halting", False)
     self.hrm = HRMCore(
       d_model=d_model,
-      h_len=hrm_cfg["h_len"],
-      l_len=hrm_cfg["l_len"],
-      h_layers=hrm_cfg["h_layers"],
-      l_layers=hrm_cfg["l_layers"],
-      h_cycles=hrm_cfg["h_cycles"],
-      l_steps=hrm_cfg["l_steps"],
-      approx_grad=hrm_cfg["approx_grad"],
-      out_dim=hrm_cfg["out_dim"],
+      h_len=int(hrm_cfg.get("h_len", 8)),
+      l_len=int(hrm_cfg.get("l_len", 64)),
+      h_layers=int(hrm_cfg.get("h_layers", 2)),
+      l_layers=int(hrm_cfg.get("l_layers", 2)),
+      h_cycles=int(hrm_cfg.get("h_cycles", 4)),
+      l_steps=int(hrm_cfg.get("l_steps", 8)),
+      approx_grad=str(hrm_cfg.get("approx_grad", "one_step")),
+      out_dim=int(hrm_cfg.get("out_dim", d_model)),
       use_halting=use_halting,
     )
     self.use_halting = use_halting
