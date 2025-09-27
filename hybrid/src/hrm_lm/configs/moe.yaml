@@ -27,15 +27,15 @@ model:
     l_layers: 2
     h_cycles: 8
     l_steps: 8
-  approx_grad: one_step  # one_step | bptt
-  use_halting: true
-  halting_weight: 0.2
-  halting_target: 5.0
-  out_dim: 512
-  deep_supervision: false
-  ds_weight: 0.2
-  gate_scale: 1.0
-  gate_bias: 0.0
+    approx_grad: one_step  # one_step | bptt
+    use_halting: true
+    halting_weight: 0.2
+    halting_target: 5.0
+    gate_scale: 5.0
+    gate_bias: 0.0
+    out_dim: 512
+    deep_supervision: false
+    ds_weight: 0.2
 bridge:
   type: prefix  # prefix | cross_attn
   prefix_len: 8
@@ -44,7 +44,7 @@ optim:
   weight_decay: 0.0
   betas: [0.9, 0.95]
 train:
-  seed: 888
+  seed: 0912
   batch_size: 8
   eval_batch_size: 8
   seq_len: 256

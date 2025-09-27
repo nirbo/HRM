@@ -27,15 +27,15 @@ model:
     l_layers: 2
     h_cycles: 4
     l_steps: 8
-  approx_grad: one_step  # one_step | bptt
-  use_halting: true
-  halting_weight: 0.05
-  halting_target: 1.0
-  out_dim: 512
-  deep_supervision: false
-  ds_weight: 0.2
-  gate_scale: 1.0
-  gate_bias: 0.0
+    approx_grad: one_step  # one_step | bptt
+    use_halting: true
+    halting_weight: 0.05
+    halting_target: 1.0
+    out_dim: 512
+    deep_supervision: false
+    ds_weight: 0.2
+    gate_scale: 1.0
+    gate_bias: 0.0
 bridge:
   type: prefix  # prefix | cross_attn
   prefix_len: 8

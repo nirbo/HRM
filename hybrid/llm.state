@@ -1452,3 +1452,5 @@
 - 2025-09-27T01:59Z: Added TE import guard, trainer MP back-fill, and install helper script; committed.- 2025-09-27T02:20Z: Forced PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True in trainer and generator to reduce allocator fragmentation.
 - 2025-09-27T03:16Z: Refreshed CUDA.md (FP8 padding/MoE fallback, allocator env defaults, throughput notes).
 - 2025-09-27T05:10Z: Added configurable HRM gate scale/bias and padded batch handling tweaks; configs expose new knobs.
+- 2025-09-27T05:15Z: Defaulted missing HRM config fields (approx_grad, cycles, etc.) to keep old checkpoints loadable.
+- 2025-09-27T05:20Z: Fixed HRM config indentation so halting settings remain under model.hrm block.

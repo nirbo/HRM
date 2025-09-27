@@ -1,10 +1,8 @@
-Expose HRM gate scale/bias controls and respect config defaults.
+Fix HRM config indentation.
 
 Summary of changes:
-- HRMLanguageModel now stores configurable gate scale/bias (with base copies) and applies them to the HRM gate output.
-- Training loop restores the configured gate scale after warmup instead of hard-coding 1.0.
-- Added `gate_scale`/`gate_bias` fields to the default, FP8, and MoE configs so runs can tune these knobs.
-- Updated statefile to record the change.
+- Nested approx_grad/halting/gate parameters back under model.hrm in default, fp8, and moe configs so the settings load correctly.
+- Logged the correction in the statefile.
 
 Testing & validation:
-- `python -m compileall src/hrm_lm/models/hybrid.py src/hrm_lm/training/train.py`
+- Config-only change.
