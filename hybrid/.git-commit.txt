@@ -1,9 +1,9 @@
-Document dataset split workflow usage
+Title: Clear stale extra eval slices and add pytorch-optimizer dependency
 
 Summary:
-- describe automatic train/val/test detection, test holdouts, and Hugging Face cache reuse in TRAINING.md.
-- update REASON-TRAINING.md stage-B recipe to include --test-ratio, cache guidance, and balanced --test-samples merge quotas.
-- log statefile updates reflecting the documentation refresh.
+- Added pytorch-optimizer to the training environment so future trainer integrations can reference the library without extra setup.
+- Cleared the default extra_eval_slices list in moe.yaml to stop warning spam when the referenced datasets are absent, leaving commented examples for reference.
+- Updated the statefile with the latest research planning notes ahead of the pytorch-optimizer integration work.
 
-Tests:
-- (docs only)
+Testing:
+- No tests executed (configuration-only changes).

@@ -61,27 +61,9 @@ train:
       interval: 1
       amax_history_len: 16
       amax_compute_algo: max
-  extra_eval_slices:
-    - name: alpaca_cleaned
-      path: datasets/reasoning/alpaca_cleaned/processed
-    - name: dolly
-      path: datasets/reasoning/dolly/processed
-    - name: hh_rlhf
-      path: datasets/reasoning/hh_rlhf/processed
-    - name: openhermes
-      path: datasets/reasoning/openhermes/processed
-    - name: ai2_arc
-      path: datasets/reasoning/ai2_arc/processed
-    - name: commonsense_qa
-      path: datasets/reasoning/commonsense_qa/processed
-    - name: cosmos_qa
-      path: datasets/reasoning/cosmos_qa/processed
-    - name: gsm8k
-      path: datasets/reasoning/gsm8k/processed
-    - name: math_qa
-      path: datasets/reasoning/math_qa/processed
-    - name: mbpp
-      path: datasets/reasoning/mbpp/processed
+  extra_eval_slices: []
+#    - name: mbpp
+#      path: datasets/reasoning/mbpp/processed
 
 profiling:
   nvtx:

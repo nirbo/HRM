@@ -1699,3 +1699,35 @@
 ### Action Log
 - 2025-09-28T07:34:30+00:00: Auto-enabled TOKENIZERS_PARALLELISM when tokenizer threads > 0.
 
+## Session 2025-09-28T08:15:00+00:00
+### Original Task Description
+- Assess whether `kozistr/pytorch_optimizer` can be integrated into the trainer to expose its optimizers, loss functions, and schedulers via existing CLI parameters without modifying current training code.
+
+### Plan
+1. Inspect current trainer configuration/CLI handling for optimizer, loss, and scheduler selection to understand integration points.
+2. Review `pytorch_optimizer` capabilities and APIs (optimizers, losses, schedulers) to determine interoperability with PyTorch expectations.
+3. Compare trainer requirements with library interfaces to identify compatibility, required adapters, or constraints for seamless integration.
+4. Summarize feasibility, potential blockers, and recommended next steps in the final response.
+
+### Action Log
+- 2025-09-28T08:15:05+00:00: Initialized research session and logged plan for pytorch_optimizer integration assessment.
+- 2025-09-28T08:16:10+00:00: Reviewed `src/hrm_lm/training/train.py` header and optimizer factory to identify current integration points.
+- 2025-09-28T08:17:20+00:00: Located CLI argument handling for optimizer options and reviewed training loop loss usage.
+- 2025-09-28T08:18:05+00:00: Retrieved kozistr/pytorch_optimizer documentation via dedicated tool for capability review.
+- 2025-09-28T08:19:15+00:00: Reviewed main documentation (index.md) detailing optimizer, scheduler, and loss loader APIs.
+- 2025-09-28T08:20:30+00:00: Inspected pytorch_optimizer/__init__.py exports to confirm loader utilities for optimizers, schedulers, and losses.
+- 2025-09-28T08:21:35+00:00: Reviewed load_optimizer and load_lr_scheduler implementations to assess API expectations and dependencies.
+- 2025-09-28T08:22:30+00:00: Inspected pytorch_optimizer loss module to understand supported loss registration and naming.
+- 2025-09-28T08:23:35+00:00: Reviewed HRMLanguageModel loss computation to confirm trainer currently hardcodes cross-entropy.
+- 2025-09-28T08:24:40+00:00: Mapped trainer CLI restrictions against pytorch_optimizer APIs to determine integration gaps.
+- 2025-09-28T08:25:30+00:00: Consolidated findings to answer feasibility question.
+- 2025-09-28T08:27:05+00:00: Drafted guidance on required refactors to integrate pytorch_optimizer selection into trainer CLI.
+
+### Pending Steps
+- None; ready to deliver assessment.
+
+### Current Summary
+- Trainer hardcodes AdamW/AdamW_8bit, manual LR decay, and in-model cross-entropy; pytorch_optimizer exposes loader APIs but requires trainer refactor to accept arbitrary names.
+
+### Open Issues
+- None besides completing the current assessment.
