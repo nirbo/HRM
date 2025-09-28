@@ -1721,7 +1721,19 @@
 - 2025-09-28T08:23:35+00:00: Reviewed HRMLanguageModel loss computation to confirm trainer currently hardcodes cross-entropy.
 - 2025-09-28T08:24:40+00:00: Mapped trainer CLI restrictions against pytorch_optimizer APIs to determine integration gaps.
 - 2025-09-28T08:25:30+00:00: Consolidated findings to answer feasibility question.
+- 2025-09-28T08:28:40+00:00: Committed pre-integration cleanup and pushed cuda-dev; created feature/pytorch-optimizer-integration branch.
+- 2025-09-28T08:30:10+00:00: Defined integration plan: externalize loss computation, add pytorch_optimizer factories, enable CLI/config kwargs, and preserve warmup semantics.
 - 2025-09-28T08:27:05+00:00: Drafted guidance on required refactors to integrate pytorch_optimizer selection into trainer CLI.
+- 2025-09-28T09:05:00+00:00: Added hrm_lm.training.optim_factory with optimizer/scheduler/loss builders and scheduler controller wrappers.
+- 2025-09-28T09:20:00+00:00: Refactored trainer to use pytorch_optimizer, compute losses externally, and checkpoint scheduler state/metadata.
+- 2025-09-28T09:25:00+00:00: Updated HRMLanguageModel plus YAML configs to return auxiliary penalties and declare name/kwargs blocks.
+- 2025-09-28T09:30:00+00:00: Extended TRAINING.md with CLI guidance and appended optimizer/scheduler/loss reference tables.
+- 2025-09-28T09:35:00+00:00: Ran compileall on training modules to verify syntax after refactor.
+- 2025-09-28T09:40:00+00:00: Added missing typing.Any import to training script to unblock CLI run.
+- 2025-09-28T09:42:00+00:00: Imported SchedulerSpec into train.py so checkpoint helper type hints resolve.
+- 2025-09-28T09:45:00+00:00: Normalized optimizer betas handling so CAME auto-injects beta3 when config provides Adam-style pairs.
+- 2025-09-28T09:47:00+00:00: Patched optimizer param groups post-load to ensure CAME betas include the third entry when resuming checkpoints.
+- 2025-09-28T09:50:00+00:00: Moved scheduler_controller.step() to run after optimizer updates to satisfy torch scheduler ordering.
 
 ### Pending Steps
 - None; ready to deliver assessment.

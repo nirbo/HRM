@@ -5,7 +5,7 @@ model:
   n_heads: 8
   dropout: 0.0
   encoder:
-    backend: transformer  # transformer | mamba2
+    backend: transformer # transformer | mamba2
     n_layers: 8
     max_seq_len: 2048
     moe:
@@ -27,7 +27,7 @@ model:
     l_layers: 2
     h_cycles: 8
     l_steps: 8
-    approx_grad: one_step  # one_step | bptt
+    approx_grad: one_step # one_step | bptt
     use_halting: true
     halting_weight: 0.04
     halting_target: 3.0
@@ -37,14 +37,28 @@ model:
     deep_supervision: false
     ds_weight: 0.2
 bridge:
-  type: prefix  # prefix | cross_attn
+  type: prefix # prefix | cross_attn
   prefix_len: 8
 optim:
-  lr: 2.5e-4
+  name: came
+  lr: 0.0002
   weight_decay: 0.0
   betas: [0.9, 0.95]
+  kwargs: {}
+loss:
+  name: cross_entropy
+  kwargs: {}
+
 train:
-  seed: 87
+  lr_scheduler:
+    name: warmup_stable_decay
+    kwargs:
+      num_warmup_steps: 2000
+      num_stable_steps: 152800   # adjust downward if you trim total steps
+      num_decay_steps: 50925
+      cooldown_type: '1-sqrt'    # default; cosine also works if you prefer smoother tail
+      min_lr_ratio: 0.02         # floor for the tail (tweak as needed)
+  seed: 12
   batch_size: 8
   eval_batch_size: 8
   seq_len: 256
@@ -55,7 +69,7 @@ train:
   fp8:
     enabled: false
     warmup_steps: 512
-    format: e4m3  # e4m3 | e5m2
+    format: e4m3 # e4m3 | e5m2
     recipe:
       margin: 0
       interval: 1

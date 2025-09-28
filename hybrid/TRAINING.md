@@ -14,6 +14,48 @@ This document explains how to launch the hybrid HRM–LM trainer, how datasets a
 
 ## Running the Trainer
 
+The trainer now wires optimizers, schedulers, and losses through [kozistr/pytorch_optimizer](https://github.com/kozistr/pytorch_optimizer). The defaults in `src/hrm_lm/configs/*.yaml` use `adamw` + `cosine` + cross-entropy, but every component can be overridden either in the YAML files or directly on the command line. All selections (including kwargs) are stored in checkpoints so resumed runs continue with the same configuration.
+
+### Configuration Fields
+
+```yaml
+optim:
+  name: adamw
+  lr: 7.5e-5
+  weight_decay: 0.01
+  betas: [0.9, 0.95]
+  kwargs: {}
+loss:
+  name: cross_entropy
+  kwargs: {}
+train:
+  lr_scheduler:
+    name: cosine
+    kwargs:
+      min_lr_ratio: 0.02
+```
+
+* `optim.name` selects any optimizer listed in the tables below. The library defaults are used unless you supply values under `optim.kwargs` (e.g. `{use_gc: true, weight_decay: 0.01}`).
+* `loss.name` can be `cross_entropy` for PyTorch’s built-in loss or any entry from the loss table. Additional arguments (e.g. `label_smoothing`) belong under `loss.kwargs`. The trainer flattens logits/labels to `[tokens, vocab]` and drops any positions with label `-100` before invoking the selected loss.
+* `train.lr_scheduler.name` accepts any scheduler from the scheduler table. Warmup is still controlled by `--warmup_steps`/`train.warmup_steps`; if the scheduler natively supports warmup, set it in `lr_scheduler.kwargs` instead.
+
+### CLI Overrides
+
+```bash
+PYTHONPATH=src python -m hrm_lm.training.train \
+  --config src/hrm_lm/configs/moe.yaml \
+  --optimizer ranger21 \
+  --optimizer_kwargs '{"use_gc": true, "weight_decay": 0.02}' \
+  --lr_scheduler warmup_stable_decay \
+  --lr_scheduler_kwargs '{"num_stable_steps": 20000, "min_lr_ratio": 0.05}' \
+  --loss bcefocalloss \
+  --loss_kwargs '{"gamma": 1.5}'
+```
+
+* `--optimizer`, `--lr_scheduler`, and `--loss` fall back to the YAML values when omitted.
+* `--optimizer_kwargs`, `--lr_scheduler_kwargs`, and `--loss_kwargs` accept JSON or Python dict literals. They are merged with config-provided values, letting you tweak a single hyperparameter without rewriting the entire dictionary.
+* Checkpoints store the resolved names/kwargs and restore the scheduler state on resume. If an older checkpoint lacks scheduler metadata the trainer prints a warning and restarts the schedule from step 0.
+
 ## Dataset Preparation
 
 To convert parquet dumps (like the FineWeb derivative) into HRM-LM-ready token triplets, run:
@@ -295,3 +337,62 @@ python -m hrm_lm.training.train \
   ```bash
   PYTHONPATH=src uv run python -m hrm_lm.inference.generate --prompt "What is 12 + 7?" --dataset synthetic --run_name arithmetic-demo
   ```
+## pytorch_optimizer Reference Tables
+
+The tables below enumerate every optimizer, learning-rate scheduler, and loss function exposed by `pytorch-optimizer` v3.8.0. Use these names in the YAML configuration or the `--optimizer`, `--lr_scheduler`, and `--loss` CLI flags.
+
+### Optimizers
+
+| Name | Name | Name | Name |
+| --- | --- | --- | --- |
+| a2grad | aggmo | galore | rmsprop |
+| accsgd | aida | grams | scalableshampoo |
+| adabelief | alice | gravity | schedulefreeadamw |
+| adabound | alig | grokfastadamw | schedulefreeradam |
+| adadelta | amos | kate | schedulefreesgd |
+| adafactor | apollo | kron | scion |
+| adagc | apollodqn | lamb | scionlight |
+| adahessian | asgd | laprop | sgd |
+| adai | avagrad | lars | sgdp |
+| adalite | bsam | lbfgs | sgdsai |
+| adalomo | came | lion | sgdw |
+| adam | dadaptadagrad | lomo | shampoo |
+| adamax | dadaptadam | madgrad | signsgd |
+| adamc | dadaptadan | mars | simplifiedademamix |
+| adamg | dadaptlion | msvag | sm3 |
+| adammini | dadaptsgd | muon | soap |
+| adamod | demo | nadam | sophiah |
+| adamp | diffgrad | nero | spam |
+| adams | distributedmuon | novograd | splus |
+| adamuon | emofact | padam | srmm |
+| adamw | emolynx | pid | stableadamw |
+| adamwsn | emonavi | pnm | stablespam |
+| adan | emoneco | prodigy | swats |
+| adanorm | emozeal | qhadam | tam |
+| adapnm | exadam | qhm | tiger |
+| adashift | fadam | racs | vsgd |
+| adasmooth | fira | radam | yogi |
+| adatam | focus | ranger |  |
+| ademamix | fromage | ranger21 |  |
+| adopt | ftrl | ranger25 |  |
+
+### LR Schedulers
+
+| Name | Name | Name | Name |
+| --- | --- | --- | --- |
+| chebyshev | cosine_annealing_with_warm_restart | multi_step | proportion |
+| constant | cosine_annealing_with_warmup | multiplicative | rex |
+| cosine | cyclic | one_cycle | step |
+| cosine_annealing | linear | poly | warmup_stable_decay |
+
+### Loss Functions
+
+| Name | Name | Name |
+| --- | --- | --- |
+| bcefocalloss | focalcosineloss | lovaszhingeloss |
+| bceloss | focalloss | softf1loss |
+| binarybitemperedlogisticloss | focaltverskyloss | tverskyloss |
+| bitemperedlogisticloss | jaccardloss |  |
+| diceloss | ldamloss |  |
+
+

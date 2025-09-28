@@ -1,9 +1,9 @@
-Title: Clear stale extra eval slices and add pytorch-optimizer dependency
+Title: Integrate pytorch_optimizer into trainer
 
 Summary:
-- Added pytorch-optimizer to the training environment so future trainer integrations can reference the library without extra setup.
-- Cleared the default extra_eval_slices list in moe.yaml to stop warning spam when the referenced datasets are absent, leaving commented examples for reference.
-- Updated the statefile with the latest research planning notes ahead of the pytorch-optimizer integration work.
+- Added hrm_lm.training.optim_factory to centralize optimizer/scheduler/loss construction via pytorch_optimizer, including CLI/config override parsing and scheduler wrappers.
+- Refactored train.py to externalize loss computation, support new CLI flags, checkpoint scheduler metadata, and align scheduler stepping with PyTorch expectations; updated HRMLanguageModel to emit auxiliary penalties.
+- Updated default/fp8/moe configs to declare optimizer/loss/scheduler names and kwargs; expanded TRAINING.md with usage instructions and optimizer/scheduler/loss reference tables; refreshed llm.state.
 
 Testing:
-- No tests executed (configuration-only changes).
+- hybrid/venv/bin/python -m compileall hybrid/src/hrm_lm/training/train.py hybrid/src/hrm_lm/models/hybrid.py hybrid/src/hrm_lm/training/optim_factory.py

@@ -118,22 +118,16 @@ class HRMLanguageModel(nn.Module):
       memory_mask=None,
     )
 
-    loss = None
+    halt_penalty = None
+    ds_logits = []
     if labels is not None:
-      loss = torch.nn.functional.cross_entropy(
-        logits.view(-1, logits.size(-1)),
-        labels.view(-1),
-        ignore_index=-100,
-      )
       if (
         self.halting_weight > 0
         and aux is not None
         and "halt" in aux
         and aux["halt"]
       ):
-        halt_stack = torch.stack(aux["halt"], dim=0).squeeze(-1).to(
-          torch.float32
-        )
+        halt_stack = torch.stack(aux["halt"], dim=0).squeeze(-1).to(torch.float32)
         halt_stack = torch.nan_to_num(halt_stack)
         summed = halt_stack.sum(dim=0)
         metrics.update(
@@ -149,14 +143,10 @@ class HRMLanguageModel(nn.Module):
         halt_reg = ((summed - target) ** 2).mean()
         if torch.isfinite(halt_reg):
           effective_weight = (
-            torch.tensor(
-              self.halting_weight,
-              dtype=torch.float32,
-              device=halt_reg.device,
-            )
-            * gate_strength
+            torch.tensor(self.halting_weight, dtype=halt_reg.dtype, device=halt_reg.device)
+            * gate_strength.to(halt_reg.device)
           )
-          loss = loss + effective_weight * halt_reg
+          halt_penalty = effective_weight * halt_reg
 
       if (
         self.deep_supervision
@@ -164,7 +154,6 @@ class HRMLanguageModel(nn.Module):
         and "z_per_cycle" in aux
         and len(aux["z_per_cycle"]) > 1
       ):
-        ds_losses = []
         for z_cycle in aux["z_per_cycle"][:-1]:
           mem_cycle = self.hrm2dec(z_cycle)
           logits_cycle = self.decoder(
@@ -173,18 +162,22 @@ class HRMLanguageModel(nn.Module):
             attention_mask=dec_attn_mask,
             memory_mask=None,
           )
-          ce_cycle = torch.nn.functional.cross_entropy(
-            logits_cycle.view(-1, logits_cycle.size(-1)),
-            labels.view(-1),
-            ignore_index=-100,
-          )
-          ds_losses.append(ce_cycle)
-        if ds_losses and self.ds_weight > 0:
-          loss = loss + self.ds_weight * torch.stack(ds_losses).mean()
+          ds_logits.append(logits_cycle)
 
-    if enc_aux is not None and loss is not None and getattr(self.encoder, 'moe_aux_weight', 0.0) > 0:
+    moe_aux_penalty = None
+    if enc_aux is not None and getattr(self.encoder, 'moe_aux_weight', 0.0) > 0:
       aux_weight = self.encoder.moe_aux_weight
-      loss = loss + aux_weight * enc_aux
-      metrics['moe_aux_loss'] = (aux_weight * enc_aux).detach().item()
+      moe_aux_penalty = aux_weight * enc_aux
+      metrics['moe_aux_loss'] = float(moe_aux_penalty.detach())
 
-    return {"logits": logits, "loss": loss, "metrics": metrics}
+    result = {"logits": logits, "metrics": metrics}
+    if halt_penalty is not None:
+      result['halt_penalty'] = halt_penalty
+    if ds_logits and self.ds_weight > 0:
+      result['ds_logits'] = ds_logits
+      result['ds_weight'] = float(self.ds_weight)
+    if moe_aux_penalty is not None:
+      result['moe_aux_penalty'] = moe_aux_penalty
+
+    return result
+

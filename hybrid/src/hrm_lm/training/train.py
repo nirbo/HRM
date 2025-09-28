@@ -10,16 +10,26 @@ import re
 import time
 import shutil
 from pathlib import Path
-from typing import Callable, Iterator, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import warnings
 import torch
 import torch.nn as nn
+from torch.optim import Optimizer
 from omegaconf import OmegaConf
 from rich.console import Console
 
 from hrm_lm.data.synthetic import build_synthetic_dataset, pad_batch
 from hrm_lm.models.hybrid import HRMLanguageModel
+from hrm_lm.training.optim_factory import (
+  LossAdapter,
+  SchedulerController,
+  SchedulerSpec,
+  build_loss,
+  build_optimizer,
+  build_scheduler_controller,
+  parse_kwargs,
+)
 
 try:
   from torch.profiler import record_function
@@ -30,6 +40,8 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 warnings.filterwarnings('ignore', message='.*Nested Tensor.*')
 console = Console(highlight=False)
+
+LABEL_PAD_VALUE = -100
 
 
 class NvtxRangeManager:
@@ -95,20 +107,6 @@ def make_model(cfg) -> HRMLanguageModel:
   )
   return model
 
-
-def make_optimizer(name: str, model: nn.Module, cfg, lr: float):
-  betas = tuple(cfg.optim.betas)
-  weight_decay = cfg.optim.weight_decay
-  name = name.lower()
-  if name == 'adamw':
-    return torch.optim.AdamW(model.parameters(), lr=lr, betas=betas, weight_decay=weight_decay)
-  if name == 'adamw_8bit':
-    try:
-      import bitsandbytes as bnb  # type: ignore
-    except ImportError as exc:
-      raise ImportError('bitsandbytes is required for --optimizer adamw_8bit. Install via `pip install bitsandbytes`.') from exc
-    return bnb.optim.AdamW8bit(model.parameters(), lr=lr, betas=betas, weight_decay=weight_decay)
-  raise ValueError(f"Unsupported optimizer '{name}'. Choose from ['adamw', 'adamw_8bit'].")
 
 
 def demo_batch(cfg, device: torch.device, batch_size: int):
@@ -407,7 +405,21 @@ def ensure_checkpoint_artifacts(directory: Optional[Path], artifacts: List[Tuple
     except Exception as exc:
       console.print(f'[bold red]Failed to copy {source} to {directory}: {exc}[/bold red]')
 
-def build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, step: int, best_loss: float, val_loss: Optional[float], optimizer_name: str) -> dict:
+def build_checkpoint_payload(
+  model: nn.Module,
+  optimizer: Optimizer,
+  scheduler: SchedulerController,
+  scaler,
+  cfg_serializable,
+  step: int,
+  best_loss: float,
+  val_loss: Optional[float],
+  optimizer_name: str,
+  optimizer_kwargs: Dict[str, Any],
+  scheduler_spec: SchedulerSpec,
+  loss_name: str,
+  loss_kwargs: Dict[str, Any],
+) -> dict:
   payload = {
     'state_dict': model.state_dict(),
     'optimizer': optimizer.state_dict(),
@@ -415,10 +427,18 @@ def build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, step: i
     'step': step,
     'best_loss': best_loss,
     'optimizer_name': optimizer_name,
+    'optimizer_kwargs': optimizer_kwargs,
+    'scheduler_name': scheduler_spec.name,
+    'scheduler_kwargs': scheduler_spec.kwargs,
+    'loss_name': loss_name,
+    'loss_kwargs': loss_kwargs,
   }
+  scheduler_state = scheduler.state_dict() if scheduler is not None else None
+  if scheduler_state is not None:
+    payload['scheduler'] = scheduler_state
   if val_loss is not None:
     payload['val_loss'] = float(val_loss)
-  if scaler is not None and scaler.is_enabled():
+  if scaler is not None and hasattr(scaler, 'is_enabled') and scaler.is_enabled():
     payload['scaler'] = scaler.state_dict()
   return payload
 
@@ -457,10 +477,6 @@ def format_speed(seconds_per_it: float) -> str:
     return f"{1.0 / seconds_per_it:.2f}it/s"
 
 
-def set_learning_rate(optimizer, lr: float) -> None:
-  for group in optimizer.param_groups:
-    group['lr'] = lr
-
 
 def main():
   import argparse
@@ -471,10 +487,14 @@ def main():
   parser.add_argument('--dataset', default=None)
   parser.add_argument('--batch_size', type=int, default=None)
   parser.add_argument('--eval_batch_size', type=int, default=None)  # optional override for validation batch sizing
-  parser.add_argument('--optimizer', default='adamw', choices=['adamw', 'adamw_8bit'])
+  parser.add_argument('--optimizer', default=None, help='Optimizer name (default uses config optim.name).')
+  parser.add_argument('--optimizer_kwargs', default=None, help='JSON/dict string overriding optimizer kwargs.')
   parser.add_argument('--learning_rate', type=float, default=None)
   parser.add_argument('--warmup_steps', type=int, default=0)
-  parser.add_argument('--lr_scheduler', default='cosine', choices=['cosine', 'linear', 'constant'])  # selects LR decay scheme
+  parser.add_argument('--lr_scheduler', default=None, help='LR scheduler name (default uses config train.lr_scheduler.name).')
+  parser.add_argument('--lr_scheduler_kwargs', default=None, help='JSON/dict string overriding lr scheduler kwargs.')
+  parser.add_argument('--loss', default=None, help='Loss function name (default uses config loss.name).')
+  parser.add_argument('--loss_kwargs', default=None, help='JSON/dict string overriding loss kwargs.')
   parser.add_argument('--steps', type=int, default=0)
   parser.add_argument('--epochs', type=int, default=0)
   parser.add_argument('--val_every', type=int, default=0)
@@ -495,6 +515,14 @@ def main():
   parser.add_argument('--lr_min_ratio', type=float, default=0.0, help='Lower bound multiplier applied to decay-based LR schedules (0 keeps the exact schedule shape).')  # Prevent cosine/linear schedules from decaying below a fixed floor.
   args = parser.parse_args()
 
+  optimizer_override = args.optimizer.strip() if isinstance(args.optimizer, str) and args.optimizer else None
+  scheduler_override = args.lr_scheduler.strip() if isinstance(args.lr_scheduler, str) and args.lr_scheduler else None
+  loss_override = args.loss.strip() if isinstance(args.loss, str) and args.loss else None
+
+  optimizer_cli_kwargs = parse_kwargs(args.optimizer_kwargs)
+  scheduler_cli_kwargs = parse_kwargs(args.lr_scheduler_kwargs)
+  loss_cli_kwargs = parse_kwargs(args.loss_kwargs)
+
   cfg = OmegaConf.load(args.config) if args.config else OmegaConf.load(Path(__file__).parent.parent / 'configs' / 'default.yaml')
   tf32_enabled = bool(getattr(cfg.train, 'enable_tf32', False))
   configure_tf32(tf32_enabled)
@@ -508,7 +536,6 @@ def main():
   eval_loss_patience = args.eval_loss_patience if args.eval_loss_patience and args.eval_loss_patience > 0 else 0  # Number of consecutive eval-loss increases tolerated before stopping.
   patience_grace = max(0, args.patience_grace_steps)  # Minimum step index that enables early-stop patience tracking.
   gate_warmup = max(0, args.hrm_gate_warmup_steps)  # Number of steps to hold the HRM gate closed during language warmup.
-  lr_min_ratio = max(0.0, float(args.lr_min_ratio))  # Floor multiplier applied to learning-rate decay schedules.
   set_seed(cfg.train.seed)
 
   profiling_cfg = getattr(cfg, 'profiling', None)
@@ -639,12 +666,52 @@ def main():
         del slice_train_data  # Drop references to the slice training split to avoid unnecessary memory retention.
 
   model = make_model(cfg).to(device)
-  optimizer = make_optimizer(args.optimizer, model, cfg, base_lr)
+  label_pad_value = LABEL_PAD_VALUE
+
+  optimizer, resolved_optimizer_name, optimizer_kwargs = build_optimizer(
+    model,
+    base_lr=base_lr,
+    cfg=cfg.optim,
+    name_override=optimizer_override,
+    cli_kwargs=optimizer_cli_kwargs,
+  )
+
+  loss_adapter, resolved_loss_name, loss_kwargs = build_loss(
+    loss_name=loss_override,
+    cfg=getattr(cfg, 'loss', {}),
+    kwargs_override=loss_cli_kwargs,
+    ignore_index=label_pad_value,
+  )
+
+  def compute_total_loss(model_out, labels_tensor):
+    metrics = dict(model_out.get('metrics', {}))
+    logits = model_out['logits']
+    primary_loss = loss_adapter(logits, labels_tensor)
+    metrics['loss_primary'] = float(primary_loss.detach())
+    total = primary_loss
+
+    ds_logits = model_out.get('ds_logits') or []
+    ds_weight = float(model_out.get('ds_weight', 0.0))
+    if ds_logits and abs(ds_weight) > 0:
+      ds_terms = [loss_adapter(ds_logits_i, labels_tensor) for ds_logits_i in ds_logits]
+      ds_loss = torch.stack(ds_terms).mean() if len(ds_terms) > 1 else ds_terms[0]
+      total = total + ds_weight * ds_loss
+      metrics['loss_deep_supervision'] = float(ds_loss.detach())
+    halt_penalty = model_out.get('halt_penalty')
+    if halt_penalty is not None:
+      total = total + halt_penalty
+      metrics.setdefault('halt_penalty', float(halt_penalty.detach()))
+    aux_penalty = model_out.get('moe_aux_penalty')
+    if aux_penalty is not None:
+      total = total + aux_penalty
+      metrics.setdefault('moe_aux_loss', float(aux_penalty.detach()))
+    return total, metrics
 
   if args.dry_run:
     x, y_in, y = demo_batch(cfg, device, effective_batch_size)
-    out = model(x, y_in, labels=y)
-    console.print(f'[chartreuse4]dry_run loss:[/chartreuse4] {out['loss'].item():.6f}')
+    model_out = model(x, y_in, labels=y)
+    total_loss, _ = compute_total_loss(model_out, y)
+    console.print(f"[chartreuse4]dry_run loss:[/chartreuse4] {float(total_loss.item()):.6f}")
     return
 
   save_dir: Optional[Path] = None
@@ -675,6 +742,30 @@ def main():
       raise ValueError('Specify a positive --steps or --epochs')
     steps_per_epoch = max(1, math.ceil(dataset_size / effective_batch_size))
     total_steps = steps_per_epoch * args.epochs
+
+  warmup_steps = max(0, args.warmup_steps)
+  if args.lr_min_ratio > 0 and 'min_lr_ratio' not in scheduler_cli_kwargs:
+    scheduler_cli_kwargs['min_lr_ratio'] = args.lr_min_ratio
+
+  scheduler_controller, scheduler_spec = build_scheduler_controller(
+    optimizer,
+    base_lr=base_lr,
+    total_steps=total_steps,
+    warmup_steps=warmup_steps,
+    cfg=getattr(cfg.train, 'lr_scheduler', {}),
+    name_override=scheduler_override,
+    cli_kwargs=scheduler_cli_kwargs,
+  )
+
+  console.print(f"[grey70]Using optimizer {resolved_optimizer_name} (base lr {base_lr:.6f}).[/grey70]")
+  if optimizer_kwargs:
+    console.print(f"[grey50]Optimizer kwargs: {optimizer_kwargs}[/grey50]")
+  console.print(f"[grey70]Using scheduler {scheduler_spec.name}.[/grey70]")
+  if scheduler_spec.kwargs:
+    console.print(f"[grey50]Scheduler kwargs: {scheduler_spec.kwargs}[/grey50]")
+  console.print(f"[grey70]Using loss {resolved_loss_name}.[/grey70]")
+  if loss_kwargs:
+    console.print(f"[grey50]Loss kwargs: {loss_kwargs}[/grey50]")
 
   mp_mode = str(args.mixed_precision).lower()
   fp8_requested = mp_mode == 'fp8'
@@ -746,6 +837,11 @@ def main():
           optimizer.load_state_dict(data['optimizer'])
         if scaler is not None and scaler.is_enabled() and data.get('scaler') is not None:
           scaler.load_state_dict(data['scaler'])
+        scheduler_state = data.get('scheduler')
+        if scheduler_state is not None:
+          scheduler_controller.load_state_dict(scheduler_state)
+        elif start_step > 0:
+          console.print('[bold yellow]Warning:[/bold yellow] scheduler state missing in checkpoint; restarting scheduler warmup.')
         best_loss = float(data.get('best_loss', float('inf')))
         start_step = int(data.get('step', resume_step))
         console.print(f'[bold yellow]Resuming from {resume_path} (step {start_step})[/bold yellow]')
@@ -760,27 +856,6 @@ def main():
   run_start_step = start_step
   run_start_time = time.time()
 
-  def adjust_lr(global_step: int) -> float:
-    if warmup_steps > 0 and global_step <= warmup_steps:  # apply warmup ramp if configured
-      warmup_ratio = min(global_step / warmup_steps, 1.0)  # clamp warmup progress between 0 and 1
-      lr = base_lr * warmup_ratio  # scale base LR during warmup
-    else:
-      decay_steps = max(total_steps - warmup_steps, 1)  # ensure at least one decay step
-      decay_progress_raw = (global_step - warmup_steps) / decay_steps  # compute raw decay progress
-      decay_progress = min(max(decay_progress_raw, 0.0), 1.0)  # clamp decay progress between 0 and 1
-      if args.lr_scheduler == 'cosine':  # select cosine decay multiplier
-        decay_factor = 0.5 * (1.0 + math.cos(math.pi * decay_progress))  # compute cosine multiplier
-      elif args.lr_scheduler == 'linear':  # select linear decay multiplier
-        decay_factor = 1.0 - decay_progress  # compute linear multiplier
-      elif args.lr_scheduler == 'constant':  # keep learning rate constant after warmup
-        decay_factor = 1.0  # no decay applied
-      else:  # safeguard against unexpected scheduler names
-        raise ValueError(f"Unsupported lr scheduler '{args.lr_scheduler}'")  # raise explicit configuration error
-      if lr_min_ratio > 0.0:  # Enforce a minimum decay multiplier when requested.
-        decay_factor = max(decay_factor, lr_min_ratio)  # Clamp the multiplier to the configured floor.
-      lr = base_lr * decay_factor  # scale base LR by selected decay factor
-    set_learning_rate(optimizer, lr)  # push updated LR into optimizer parameter groups
-    return lr  # expose the learning rate for logging
 
   def truncate_to_max_length(tensor: torch.Tensor, length: int) -> torch.Tensor:
     return tensor[:, :length] if tensor.size(1) > length else tensor
@@ -834,8 +909,9 @@ def main():
           eval_fp8_ctx = fp8_context_factory(eval_fp8_enabled) if fp8_context_factory is not None else contextlib.nullcontext()  # Activate FP8 context when requested.
           eval_nvtx_ctx = nvtx_range('eval.batch') if (nvtx_range.enabled and nvtx_include_eval) else contextlib.nullcontext()  # Annotate the batch with NVTX ranges when enabled.
           with eval_fp8_ctx, eval_autocast_ctx, eval_nvtx_ctx:
-            v_out = model(v_enc, v_dec_in, enc_attn_mask=v_enc_mask, dec_attn_mask=v_dec_mask, labels=v_labels)  # Execute the model forward pass to obtain the evaluation loss.
-          val_loss_sum += float(v_out['loss'].item())  # Accumulate the scalar loss value for averaging.
+            v_out = model(v_enc, v_dec_in, enc_attn_mask=v_enc_mask, dec_attn_mask=v_dec_mask, labels=v_labels)
+          v_loss, _ = compute_total_loss(v_out, v_labels)
+          val_loss_sum += float(v_loss.item())
           val_batches += 1  # Increment the processed batch counter.
           elapsed_eval = time.time() - start_eval_time  # Measure elapsed evaluation time to compute an ETA.
           batches_left = total_val_batches - val_batches  # Estimate how many batches remain in this evaluation pass.
@@ -852,7 +928,7 @@ def main():
       console.print(f'[orchid]{label}:[/orchid] step {step}/{total_steps}, loss: {average_loss:.6f} (batches: {val_batches})')
     return average_loss  # Provide the mean loss to the caller for logging and early-stop tracking.
 
-  label_pad_value = -100
+  label_pad_value = LABEL_PAD_VALUE
 
   consecutive_eval_increase = 0  # Count consecutive times validation loss increases.
   last_eval_loss: Optional[float] = None  # Remember the previous validation loss for comparison.
@@ -888,10 +964,9 @@ def main():
     autocast_ctx = torch.autocast(**autocast_kwargs) if autocast_kwargs else contextlib.nullcontext()
     forward_ctx = nvtx('forward') if nvtx is not None else contextlib.nullcontext()
     with fp8_ctx, autocast_ctx, forward_ctx:
-      out = model(enc, dec_in, enc_attn_mask=enc_mask, dec_attn_mask=dec_mask, labels=labels)
-      loss_tensor = out['loss']
+      model_out = model(enc, dec_in, enc_attn_mask=enc_mask, dec_attn_mask=dec_mask, labels=labels)
+      loss_tensor, step_metrics = compute_total_loss(model_out, labels)
 
-    step_metrics = out.get('metrics', {}) if isinstance(out, dict) else {}
     backward_ctx = nvtx('backward') if nvtx is not None else contextlib.nullcontext()
     with backward_ctx:
       if scaler is not None and scaler.is_enabled():
@@ -915,6 +990,7 @@ def main():
       else:
         optimizer.step()
     step_metrics = dict(step_metrics) if step_metrics else {}
+    step_metrics['loss_total'] = float(loss_tensor.detach())
     step_metrics['grad_norm_raw'] = raw_grad_norm
     return loss_tensor, step_metrics
 
@@ -961,7 +1037,7 @@ def main():
     else:
       batch_tensors = get_next_batch()
     global_step += 1
-    current_lr = adjust_lr(global_step)
+    current_lr = scheduler_controller.last_lr
 
     if hasattr(model, 'gate_scale'):
       base_scale = getattr(model, 'gate_scale_base', None)
@@ -1021,6 +1097,8 @@ def main():
           fp8_context=fp8_context_factory,
           fp8_enabled=fp8_step_enabled,
         )
+
+    current_lr = scheduler_controller.step()
 
     loss_val = float(loss_tensor.item())
     if not math.isfinite(loss_val):
@@ -1085,14 +1163,42 @@ def main():
       if args.save_best_model and v_loss < best_loss:
         best_loss = v_loss
         if best_dir is not None:
-          best_payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, global_step, best_loss, v_loss, args.optimizer)
+          best_payload = build_checkpoint_payload(
+            model,
+            optimizer,
+            scheduler_controller,
+            scaler,
+            cfg_serializable,
+            global_step,
+            best_loss,
+            v_loss,
+            resolved_optimizer_name,
+            optimizer_kwargs,
+            scheduler_spec,
+            resolved_loss_name,
+            loss_kwargs,
+          )
           best_model_path = best_dir / 'model.pt'
           torch.save(best_payload, best_model_path)
           write_config(best_dir / 'config.yaml', cfg_serializable)
           ensure_checkpoint_artifacts(best_dir, artifact_sources)
 
       if save_dir is not None:
-        payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, global_step, best_loss, v_loss, args.optimizer)
+        payload = build_checkpoint_payload(
+          model,
+          optimizer,
+          scheduler_controller,
+          scaler,
+          cfg_serializable,
+          global_step,
+          best_loss,
+          v_loss,
+          resolved_optimizer_name,
+          optimizer_kwargs,
+          scheduler_spec,
+          resolved_loss_name,
+          loss_kwargs,
+        )
         ckpt_dir = save_dir / f'step_{global_step:06d}'
         if ckpt_dir.exists():
           shutil.rmtree(ckpt_dir)
@@ -1119,7 +1225,21 @@ def main():
       break  # Exit the main step loop immediately.
 
   if save_dir is not None:
-    final_payload = build_checkpoint_payload(model, optimizer, scaler, cfg_serializable, total_steps, best_loss, None, args.optimizer)
+    final_payload = build_checkpoint_payload(
+      model,
+      optimizer,
+      scheduler_controller,
+      scaler,
+      cfg_serializable,
+      total_steps,
+      best_loss,
+      None,
+      resolved_optimizer_name,
+      optimizer_kwargs,
+      scheduler_spec,
+      resolved_loss_name,
+      loss_kwargs,
+    )
     final_dir = save_dir / 'final'
     if final_dir.exists():
       shutil.rmtree(final_dir)

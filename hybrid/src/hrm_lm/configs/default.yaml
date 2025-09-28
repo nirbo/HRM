@@ -40,10 +40,19 @@ bridge:
   type: prefix  # prefix | cross_attn
   prefix_len: 8
 optim:
+  name: adamw
   lr: 2.5e-4
   weight_decay: 0.0
   betas: [0.9, 0.95]
+  kwargs: {}
+loss:
+  name: cross_entropy
+  kwargs: {}
+
 train:
+  lr_scheduler:
+    name: cosine
+    kwargs: {}
   seed: 888
   batch_size: 2
   eval_batch_size: 2
