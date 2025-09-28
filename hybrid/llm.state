@@ -1454,3 +1454,98 @@
 - 2025-09-27T05:10Z: Added configurable HRM gate scale/bias and padded batch handling tweaks; configs expose new knobs.
 - 2025-09-27T05:15Z: Defaulted missing HRM config fields (approx_grad, cycles, etc.) to keep old checkpoints loadable.
 - 2025-09-27T05:20Z: Fixed HRM config indentation so halting settings remain under model.hrm block.
+
+## Session 2025-09-28T00:52:45Z
+### Original Task Description
+- Analyze latest training run logs (low train loss vs plateaued eval) and advise on implications / next steps.
+
+### Plan
+1. Review provided training metrics to understand loss, gate, and halt trends.
+2. Assess potential reasons eval loss stagnates despite train loss dips; outline actionable guidance.
+3. Summarize findings and recommendations for user; document action in statefile.
+
+### Action Log
+- 2025-09-28T00:52:45Z: Listed workspace contents to confirm statefile presence and repo context.
+- 2025-09-28T00:52:45Z: Reviewed statefile header to align with prior sessions.
+
+### Pending Steps
+- Execute plan steps 1-3 for current analysis.
+
+### Current Summary
+- Session initialized; pending analysis of training/eval behavior.
+
+### Open Issues
+- None beyond current investigation.
+
+### Action Log
+- 2025-09-28T00:52:59Z: Parsed user-provided training/eval logs to assess loss trends and HRM gating metrics.
+- 2025-09-28T00:52:59Z: Derived guidance on evaluation stagnation vs. training loss dips and prepared user-facing recommendations.
+
+### Pending Steps
+- None; plan complete.
+
+### Current Summary
+- Train loss volatility likely reflects batch-level difficulty; evaluation stagnation suggests generalization plateau. Guidance ready for user.
+
+### Open Issues
+- Consider logging per-dataset eval metrics to pinpoint bottlenecks if plateau persists.
+
+### Action Log
+- 2025-09-28T00:55:53Z: Noted user reminder about early-exit-on-three-worsening-evals and considered implications for plateau guidance.
+
+### Pending Steps
+- None; awaiting potential adjustments to patience or logging.
+
+### Current Summary
+- Early-exit guard will stop runs after three eval regressions, so monitoring suggestions must account for that.
+
+### Open Issues
+- Evaluate whether `eval_loss_patience` needs tuning once per-dataset metrics are enabled.
+
+### Action Log
+- 2025-09-28T01:02:44Z: Recorded 50k-step eval (loss ≈2.80) without new best; decision pending on continuation.
+
+### Pending Steps
+- Continue monitoring training run; revisit if next evals fail to improve.
+
+### Current Summary
+- Run remains below patience threshold; recommendation is to keep training while collecting more eval data.
+
+### Open Issues
+- Persistent flat eval may require LR/halting adjustments after additional checkpoints.
+
+### Action Log
+- 2025-09-28T02:35:00Z: Logged request for decimal learning rate values; prepared explicit numeric guidance.
+
+### Plan
+1. Stage current config updates and prepare commit summary without altering user changes.
+2. Implement per-slice validation logging while keeping modifications minimal and well-documented.
+3. Update documentation/statefile, run sanity checks, commit, and push changes.
+
+### Action Log
+- 2025-09-28T02:44:55Z: Added extra evaluation slice loading in train.py, including configuration parsing and console diagnostics.
+- 2025-09-28T02:44:55Z: Introduced reusable run_eval_pass helper for shared validation flow and integrated per-slice logging.
+- 2025-09-28T02:44:55Z: Extended moe.yaml with explicit extra_eval_slices entries to drive per-slice metrics.
+- 2025-09-28T02:44:55Z: Ran `python -m compileall src/hrm_lm/training/train.py` to verify syntax after modifications.
+
+### Action Log
+- 2025-09-28T02:45:24Z: Staged training and config updates alongside statefile adjustments in preparation for commit.
+
+### Action Log
+- 2025-09-28T02:45:58Z: Attempted `git add -F .git-commit.txt`; command failed because -F is not a valid git add flag.
+
+### Open Issues
+- Adjust force-add command to use valid git syntax before committing.
+
+### Action Log
+- 2025-09-28T02:46:06Z: Force-added .git-commit.txt with `git add -f` per repository policy after correcting flag usage.
+
+### Action Log
+- 2025-09-28T02:46:23Z: Committed staged changes with message 'Add per-slice validation logging'.
+
+### Action Log
+- 2025-09-28T02:46:52Z: Marked task plan steps as completed following commit and staging workflow.
+
+### Pending Steps
+- None; awaiting push confirmation and user verification.
+

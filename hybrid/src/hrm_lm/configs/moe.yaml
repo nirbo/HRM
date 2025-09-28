@@ -29,9 +29,9 @@ model:
     l_steps: 8
     approx_grad: one_step  # one_step | bptt
     use_halting: true
-    halting_weight: 0.05
+    halting_weight: 0.04
     halting_target: 3.0
-    gate_scale: 2.0
+    gate_scale: 1.0
     gate_bias: 0.02
     out_dim: 512
     deep_supervision: false
@@ -44,7 +44,7 @@ optim:
   weight_decay: 0.0
   betas: [0.9, 0.95]
 train:
-  seed: 0912
+  seed: 87
   batch_size: 8
   eval_batch_size: 8
   seq_len: 256
@@ -61,6 +61,27 @@ train:
       interval: 1
       amax_history_len: 16
       amax_compute_algo: max
+  extra_eval_slices:
+    - name: alpaca_cleaned
+      path: datasets/reasoning/alpaca_cleaned/processed
+    - name: dolly
+      path: datasets/reasoning/dolly/processed
+    - name: hh_rlhf
+      path: datasets/reasoning/hh_rlhf/processed
+    - name: openhermes
+      path: datasets/reasoning/openhermes/processed
+    - name: ai2_arc
+      path: datasets/reasoning/ai2_arc/processed
+    - name: commonsense_qa
+      path: datasets/reasoning/commonsense_qa/processed
+    - name: cosmos_qa
+      path: datasets/reasoning/cosmos_qa/processed
+    - name: gsm8k
+      path: datasets/reasoning/gsm8k/processed
+    - name: math_qa
+      path: datasets/reasoning/math_qa/processed
+    - name: mbpp
+      path: datasets/reasoning/mbpp/processed
 
 profiling:
   nvtx:

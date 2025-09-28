@@ -1,5 +1,11 @@
-Default HRM config fallbacks.
+Add per-slice validation logging for HRM training runs
 
-Summary of changes:
-- HRMLanguageModel now reads HRM config via dict.get with sensible defaults, avoiding KeyErrors when older configs are missing fields.
-- Updated CUDA.md FP8 section/state to mention padding and BF16 expert fallback.
+Summary:
+- load optional extra evaluation slices from the training config and surface descriptive warnings for misconfigured entries.
+- factor shared validation logic into run_eval_pass so main and per-slice evaluations share batching, truncation, and NVTX behaviours.
+- emit labelled per-slice validation metrics every eval interval while preserving early-stop tracking on the primary dataset only.
+- extend moe.yaml with the updated HRM halting parameters and enumerate the ten component datasets so per-source metrics are available out of the box.
+- append detailed session notes to llm.state capturing analysis, plan, staging, and tooling steps for traceability.
+
+Tests:
+- python -m compileall src/hrm_lm/training/train.py

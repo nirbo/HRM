@@ -554,6 +554,7 @@ def main():
   pad_id = 0
   dataset_size = 0
   artifact_sources: List[Tuple[Path, str]] = []
+  extra_eval_slices: List[dict] = []  # Track additional validation slices configured for per-dataset reporting.
   val_sample_cap = max_val_samples  # Default validation sample cap shared across dataset modes.
 
   if not args.dataset or args.dataset == 'synthetic':
@@ -590,6 +591,52 @@ def main():
         tok_path = (dataset_path / tok_path).resolve()
       if tok_path.exists():
         artifact_sources.append((tok_path, tok_path.name))
+
+    extra_eval_cfg_raw = getattr(cfg.train, 'extra_eval_slices', [])  # Retrieve user-defined extra validation slice configuration.
+    extra_eval_cfg = OmegaConf.to_container(extra_eval_cfg_raw, resolve=True)  # Convert OmegaConf structures into plain Python containers for iteration.
+    if isinstance(extra_eval_cfg, list):  # Proceed only when the configuration resolves to a list of slice descriptors.
+      for slice_cfg in extra_eval_cfg:  # Traverse each configured validation slice entry.
+        if not isinstance(slice_cfg, dict):  # Ensure the entry is a dictionary describing the slice parameters.
+          console.print(f'[bold yellow]Skipping extra eval slice entry without mapping semantics: {slice_cfg}[/bold yellow]')
+          continue  # Ignore malformed entries and continue processing the remaining slices.
+        slice_path_value = slice_cfg.get('path')  # Extract the target directory path for the validation slice.
+        if not slice_path_value:  # Guard against missing paths to avoid runtime errors.
+          console.print('[bold yellow]Extra eval slice entry missing "path"; skipping.[/bold yellow]')
+          continue  # Skip entries without explicit dataset paths.
+        slice_path = Path(slice_path_value).expanduser()  # Expand any user home references in the supplied path.
+        if not slice_path.is_absolute():  # Normalize relative paths with respect to the repository root for deterministic resolution.
+          slice_path = (Path.cwd() / slice_path).resolve()  # Resolve the relative path into an absolute filesystem location.
+        if not slice_path.exists() or not slice_path.is_dir():  # Validate that the resolved path points to an existing directory.
+          console.print(f'[bold yellow]Extra eval slice path {slice_path} is not a directory; skipping.[/bold yellow]')
+          continue  # Skip nonexistent or invalid directories while preserving training continuity.
+        slice_name = str(slice_cfg.get('name') or slice_path.name)  # Derive a human-readable name for logging purposes.
+        slice_cap_raw = slice_cfg.get('max_samples')  # Fetch the optional per-slice evaluation sample cap.
+        slice_cap = None  # Default to evaluating the entire slice unless a positive cap is provided.
+        if isinstance(slice_cap_raw, (int, float)) and slice_cap_raw > 0:  # Accept positive numeric caps for bounded evaluations.
+          slice_cap = int(slice_cap_raw)  # Normalize the cap to an integer sample count.
+        slice_workers_raw = slice_cfg.get('workers')  # Allow slices to override the worker pool size when necessary.
+        slice_workers = dataset_workers if slice_workers_raw is None else max(1, int(slice_workers_raw))  # Clamp worker usage to a positive integer.
+        try:
+          slice_train_data, slice_val_data, slice_pad_id, _, _, _ = load_jsonl_dataset(slice_path, workers=slice_workers)  # Load the slice dataset using the established JSONL loader.
+        except Exception as exc:  # Provide detailed diagnostics if the slice fails to load.
+          console.print(f'[bold red]Failed to load extra eval slice "{slice_name}" from {slice_path}: {exc}[/bold red]')
+          continue  # Continue processing subsequent slices after logging the failure.
+        slice_count = len(slice_val_data)  # Determine how many validation samples are available for the slice.
+        if slice_count == 0:  # Warn when the slice lacks evaluation samples entirely.
+          console.print(f'[bold yellow]Extra eval slice "{slice_name}" has no validation samples; skipping.[/bold yellow]')
+          del slice_train_data  # Release training data references before moving on.
+          continue  # Move to the next slice configuration without registering this entry.
+        if slice_cap is not None and slice_cap > slice_count:  # Ensure the configured cap does not exceed the slice length.
+          slice_cap = slice_count  # Clamp the cap to the available sample count to avoid over-consumption.
+        extra_eval_slices.append({
+          'name': slice_name,  # Human-readable identifier for console reporting and log correlation.
+          'data': slice_val_data,  # Validation samples backing the slice evaluation.
+          'pad_id': slice_pad_id,  # Padding token identifier required for batch assembly.
+          'cap': slice_cap,  # Optional sample cap used to bound evaluation cost.
+          'total': slice_count,  # Persist the total number of validation samples for reporting.
+        })
+        console.print(f'[grey70]Loaded extra eval slice "{slice_name}" ({slice_count:,} samples) from {slice_path}[/grey70]')
+        del slice_train_data  # Drop references to the slice training split to avoid unnecessary memory retention.
 
   model = make_model(cfg).to(device)
   optimizer = make_optimizer(args.optimizer, model, cfg, base_lr)
@@ -745,6 +792,65 @@ def main():
     pad_shape = (tensor.size(0), length - current) + tensor.shape[2:]
     pad_tensor = tensor.new_full(pad_shape, value)
     return torch.cat([tensor, pad_tensor], dim=1)
+
+  def run_eval_pass(label: str, samples, pad_token_id: int, sample_cap: Optional[int], step: int) -> Optional[float]:
+    total_available = len(samples)  # Determine how many validation samples the slice exposes.
+    target_limit = total_available if sample_cap is None else min(total_available, sample_cap)  # Respect optional sample caps when provided.
+    if target_limit <= 0:  # Skip evaluation when the slice has no usable samples.
+      console.print(f'[bold yellow]{label} skipped: no validation samples available.[/bold yellow]')
+      return None  # Signal to the caller that no loss value was produced.
+    total_val_batches = max(1, math.ceil(target_limit / effective_eval_batch_size))  # Compute how many batches will be evaluated.
+    val_loss_sum = 0.0  # Accumulate total loss over the evaluation batches.
+    val_batches = 0  # Track how many batches were processed for progress reporting.
+    processed_samples = 0  # Track how many samples have been consumed so far.
+    status_text = f'[grey58]{label} step {step}/{total_steps} ({total_val_batches} batches)...[/grey58]'  # Prepare console status message for the evaluation pass.
+    with console.status(status_text, spinner='line'):
+      start_eval_time = time.time()  # Record the evaluation start time for ETA estimation.
+      eval_fp8_enabled = fp8_context_factory is not None and step > fp8_warmup_steps  # Enable FP8 context after the configured warmup window.
+      with torch.no_grad():  # Disable gradient tracking during evaluation to reduce overhead.
+        for batch_idx, batch in enumerate(iter_eval_batches(samples, effective_eval_batch_size, pad_token_id), start=1):
+          v_enc, v_dec_in, v_labels, v_enc_mask, v_dec_mask = batch  # Unpack the batch tensors produced by the iterator.
+          batch_size = v_enc.size(0)  # Record the number of samples in the current batch.
+          processed_samples += batch_size  # Update the running sample counter.
+          if processed_samples > target_limit:  # Apply late clipping when the batch would exceed the configured cap.
+            overflow = processed_samples - target_limit  # Determine how many samples exceed the allowed budget.
+            keep = batch_size - overflow  # Derive how many samples should be retained from the batch.
+            if keep <= 0:  # If the overflow removes the entire batch, abort the loop immediately.
+              processed_samples = target_limit  # Clamp the processed sample counter to the allowed ceiling.
+              break  # Exit the evaluation loop to honor the sample cap.
+            v_enc = v_enc[:keep]  # Trim encoder tokens to the permitted batch subset.
+            v_dec_in = v_dec_in[:keep]  # Trim decoder inputs accordingly.
+            v_labels = v_labels[:keep]  # Trim supervision labels to match the kept subset.
+            v_enc_mask = v_enc_mask[:keep]  # Trim encoder attention masks.
+            v_dec_mask = v_dec_mask[:keep]  # Trim decoder attention masks.
+            batch_size = keep  # Update the effective batch size after trimming.
+            processed_samples = target_limit  # Clamp the processed sample count precisely to the cap.
+          v_enc = truncate_to_max_length(v_enc, effective_seq_len).to(device)  # Enforce sequence length limits and move tensors to the training device.
+          v_dec_in = truncate_to_max_length(v_dec_in, effective_seq_len).to(device)  # Apply the same truncation to decoder inputs.
+          v_labels = truncate_to_max_length(v_labels, effective_seq_len).to(device)  # Truncate supervision labels.
+          v_enc_mask = truncate_to_max_length(v_enc_mask, effective_seq_len).to(device).bool()  # Truncate encoder masks and convert to boolean tensors.
+          v_dec_mask = truncate_to_max_length(v_dec_mask, effective_seq_len).to(device).bool()  # Truncate decoder masks and convert to boolean tensors.
+          eval_autocast_ctx = torch.autocast(**autocast_kwargs) if autocast_kwargs else contextlib.nullcontext()  # Enter autocast when mixed precision is active.
+          eval_fp8_ctx = fp8_context_factory(eval_fp8_enabled) if fp8_context_factory is not None else contextlib.nullcontext()  # Activate FP8 context when requested.
+          eval_nvtx_ctx = nvtx_range('eval.batch') if (nvtx_range.enabled and nvtx_include_eval) else contextlib.nullcontext()  # Annotate the batch with NVTX ranges when enabled.
+          with eval_fp8_ctx, eval_autocast_ctx, eval_nvtx_ctx:
+            v_out = model(v_enc, v_dec_in, enc_attn_mask=v_enc_mask, dec_attn_mask=v_dec_mask, labels=v_labels)  # Execute the model forward pass to obtain the evaluation loss.
+          val_loss_sum += float(v_out['loss'].item())  # Accumulate the scalar loss value for averaging.
+          val_batches += 1  # Increment the processed batch counter.
+          elapsed_eval = time.time() - start_eval_time  # Measure elapsed evaluation time to compute an ETA.
+          batches_left = total_val_batches - val_batches  # Estimate how many batches remain in this evaluation pass.
+          eta_seconds = (elapsed_eval / val_batches) * batches_left if val_batches > 0 else float('inf')  # Project remaining evaluation time using the average batch duration.
+          eta_eval = format_eta(eta_seconds) if eta_seconds != float('inf') else '--h:--m'  # Convert the ETA into a human-readable string.
+          displayed_samples = processed_samples if sample_cap is None else min(processed_samples, target_limit)  # Clamp the displayed sample counter to the evaluation cap.
+          console.print(f'[grey50]  {label} batch {val_batches}/{total_val_batches} (samples {displayed_samples}) eta {eta_eval}[/grey50]', soft_wrap=False, overflow='crop')  # Emit per-batch progress updates for visibility.
+          if processed_samples >= target_limit:  # Stop iterating once the configured sample budget has been consumed.
+            break  # Exit the evaluation loop while preserving the accumulated metrics.
+    average_loss = val_loss_sum / max(val_batches, 1)  # Compute the mean loss across the processed batches.
+    if sample_cap is not None:  # Include sample totals in the console summary when a cap was enforced.
+      console.print(f'[orchid]{label}:[/orchid] step {step}/{total_steps}, loss: {average_loss:.6f} (batches: {val_batches}, samples: {target_limit})')
+    else:  # Match legacy formatting for uncapped evaluations.
+      console.print(f'[orchid]{label}:[/orchid] step {step}/{total_steps}, loss: {average_loss:.6f} (batches: {val_batches})')
+    return average_loss  # Provide the mean loss to the caller for logging and early-stop tracking.
 
   label_pad_value = -100
 
@@ -965,62 +1071,16 @@ def main():
 
     if args.val_every > 0 and global_step % args.val_every == 0:
       model.eval()
-      total_samples = len(val_data)
-      if val_sample_cap is not None:
-        total_samples = min(total_samples, val_sample_cap)
-      total_val_batches = math.ceil(total_samples / effective_eval_batch_size)
-      val_loss_sum = 0.0
-      val_batches = 0
-      processed_samples = 0
-      status_text = f'[grey58]eval step {global_step}/{total_steps} ({total_val_batches} batches)...[/grey58]'
-      with console.status(status_text, spinner='line'):
-        start_eval_time = time.time()
-        eval_fp8_enabled = fp8_context_factory is not None and global_step > fp8_warmup_steps
-        with torch.no_grad():
-          for batch_idx, batch in enumerate(iter_eval_batches(val_data, effective_eval_batch_size, pad_id), start=1):
-            v_enc, v_dec_in, v_labels, v_enc_mask, v_dec_mask = batch
-            batch_size = v_enc.size(0)
-            processed_samples += batch_size
-            if val_sample_cap is not None and processed_samples > val_sample_cap:
-              overflow = processed_samples - val_sample_cap
-              keep = batch_size - overflow
-              if keep <= 0:
-                break
-              v_enc = v_enc[:keep]
-              v_dec_in = v_dec_in[:keep]
-              v_labels = v_labels[:keep]
-              v_enc_mask = v_enc_mask[:keep]
-              v_dec_mask = v_dec_mask[:keep]
-              batch_size = keep
-              processed_samples = val_sample_cap
-            v_enc = truncate_to_max_length(v_enc, effective_seq_len).to(device)
-            v_dec_in = truncate_to_max_length(v_dec_in, effective_seq_len).to(device)
-            v_labels = truncate_to_max_length(v_labels, effective_seq_len).to(device)
-            v_enc_mask = truncate_to_max_length(v_enc_mask, effective_seq_len).to(device).bool()
-            v_dec_mask = truncate_to_max_length(v_dec_mask, effective_seq_len).to(device).bool()
-            eval_autocast_ctx = torch.autocast(**autocast_kwargs) if autocast_kwargs else contextlib.nullcontext()
-            eval_fp8_ctx = fp8_context_factory(eval_fp8_enabled) if fp8_context_factory is not None else contextlib.nullcontext()
-            eval_nvtx_ctx = nvtx_range('eval.batch') if (nvtx_range.enabled and nvtx_include_eval) else contextlib.nullcontext()
-            with eval_fp8_ctx, eval_autocast_ctx, eval_nvtx_ctx:
-              v_out = model(v_enc, v_dec_in, enc_attn_mask=v_enc_mask, dec_attn_mask=v_dec_mask, labels=v_labels)
-            val_loss_sum += float(v_out['loss'].item())
-            val_batches += 1
-            elapsed_eval = time.time() - start_eval_time
-            batches_left = total_val_batches - val_batches
-            eta_seconds = (elapsed_eval / val_batches) * batches_left if val_batches > 0 else float('inf')
-            eta_eval = format_eta(eta_seconds) if eta_seconds != float('inf') else '--h:--m'
-            console.print(f'[grey50]  eval batch {val_batches}/{total_val_batches} (samples {processed_samples if val_sample_cap is None else min(processed_samples, val_sample_cap)}) eta {eta_eval}[/grey50]', soft_wrap=False, overflow='crop')
-            if val_sample_cap is not None and processed_samples >= val_sample_cap:
-              break
+      main_eval_label = 'eval'  # Preserve legacy label formatting for the primary validation sweep.
+      main_loss = run_eval_pass(main_eval_label, val_data, pad_id, val_sample_cap, global_step)  # Execute the standard validation pass and capture its loss.
+      for slice_info in extra_eval_slices:  # Iterate over any additional per-slice evaluation datasets configured by the user.
+        slice_label = f"{main_eval_label}[{slice_info['name']}]"  # Compose a descriptive label tying the slice metrics back to the root evaluation.
+        run_eval_pass(slice_label, slice_info['data'], slice_info['pad_id'], slice_info['cap'], global_step)  # Emit per-slice validation metrics without disturbing early-stop tracking.
       if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.ipc_collect()
       model.train()
-      v_loss = val_loss_sum / max(val_batches, 1)
-      if val_sample_cap is not None:
-        console.print(f'[orchid]eval:[/orchid] step {global_step}/{total_steps}, loss: {v_loss:.6f} (batches: {val_batches}, samples: {min(total_samples, val_sample_cap)})')
-      else:
-        console.print(f'[orchid]eval:[/orchid] step {global_step}/{total_steps}, loss: {v_loss:.6f} (batches: {val_batches})')
+      v_loss = main_loss if main_loss is not None else float('inf')  # Fall back to an infinite loss when the primary evaluation fails to produce a value.
 
       if args.save_best_model and v_loss < best_loss:
         best_loss = v_loss
