@@ -1626,3 +1626,39 @@
 ### Action Log
 - 2025-09-28T04:27:10+00:00: Finalized doc update commit (28ea097) after syncing statefile and force-pushed to origin/cuda-dev.
 
+## Session 2025-09-28T04:30:47+00:00
+### Original Task Description
+- Rebuild all reasoning datasets with the new preprocessing flow (official validation/test splits + holdouts), ensuring previous processed files are cleared first.
+
+### Plan
+1. Remove existing processed directories for each reasoning dataset.
+2. Re-run prepare_language_dataset.py for every dataset using cached splits/holdouts.
+3. Recreate merged training/validation/test mixes with the updated merge script.
+4. Verify outputs and log results in the statefile.
+
+### Action Log
+- 2025-09-28T04:41:08+00:00: Rebuilt reasoning datasets with official splits/holdouts and regenerated hybrid_reasoning_mix-2 (12M train / 50k val / 50k test).
+
+### Current Summary
+- All reasoning corpora now expose train/val/test JSONL plus updated metadata; merged dataset ready for the next training run.
+### Action Log
+- 2025-09-28T06:40:27+00:00: Started implementing generic dataset slicing script with aria2c multi-threaded download support.
+
+### Action Log
+- 2025-09-28T06:41:36+00:00: Added scripts/download_dataset_slice.py for multi-threaded slicing via aria2c; documented usage in response.
+
+### Action Log
+- 2025-09-28T06:52:51+00:00: Documenting dataset slice script usage in TRAINING.md.
+
+### Action Log
+- 2025-09-28T06:53:15+00:00: Documented dataset slice workflow in TRAINING.md.
+
+### Action Log
+- 2025-09-28T06:56:52+00:00: Added fallback in dataset slice script for .zstd/.zst file naming differences.
+
+### Action Log
+- 2025-09-28T06:58:51+00:00: Improved aria2c handling to detect newly created files and enforce consistent naming during dataset slicing.
+
+### Action Log
+- 2025-09-28T07:00:47+00:00: Refined aria2c post-processing to detect new files by name/size and rename when necessary.
+

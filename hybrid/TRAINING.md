@@ -30,6 +30,40 @@ PYTHONPATH=src uv run python scripts/prepare_language_dataset.py \
 If `--tokenizer` points to an existing `tokenizer.json`, it is reused; otherwise a new BPE tokenizer (Hugging Face format) is trained and saved alongside the processed dataset. The script now writes `train.jsonl`, `val.jsonl`, `test.jsonl`, the tokenizer JSON, and `meta.json` containing padding IDs, vocab size, and split counts. Each sample stores `encoder_ids`, `decoder_input_ids`, and `labels` arrays of tokens ready for loading.
 Optional flags: `--tokenizer-num-threads` to cap CPU threads, `--tokenizer-batch-size` to control encoding batch size, `--max-files` for quick smoke tests, and `--test-ratio` to reserve an explicit test hold-out when the raw source lacks an official test split (defaults to the validation ratio). The converter auto-detects Hugging Face style file names—if the source directory already includes `train`, `validation`, or `test` files (e.g. when pointing directly at `~/.cache/huggingface/datasets/<provider>/<dataset>/<config>/<rev>/`), those splits are preserved verbatim instead of being re-sampled.
 
+### Pulling slices from massive web datasets
+
+For huge corpora such as Nemotron-CC (≈10 TB), clone the repository with `aria2c` support and use `scripts/download_dataset_slice.py` to download manageable slices without duplicating work.
+
+Requirements:
+- `aria2c` on PATH (`sudo apt install aria2` or `brew install aria2`).
+- Python package `zstandard` installed (already in requirements).
+
+Examples:
+
+```bash
+# Grab the first 5 million samples from Nemotron-CC jsonl shards
+python scripts/download_dataset_slice.py \
+  --index-url https://data.commoncrawl.org/contrib/Nemotron/Nemotron-CC/data-jsonl.paths.gz \
+  --base-url https://data.commoncrawl.org/ \
+  --output data/nemotron_cc_slice.jsonl \
+  --start 1 \
+  --count 5000000 \
+  --aria2c-connections 32 \
+  --aria2c-split 32
+
+# Pull ~20 GB of high-quality samples into a compressed file
+python scripts/download_dataset_slice.py \
+  --index-url https://data.commoncrawl.org/contrib/Nemotron/Nemotron-CC/data-jsonl.paths.gz \
+  --base-url https://data.commoncrawl.org/ \
+  --pattern "quality=high" \
+  --output data/nemotron_high_quality.zst \
+  --target-size 20G \
+  --compress \
+  --compression-level 5
+```
+
+Each run writes a metadata JSON alongside the slice (default `<output>.meta.json`) that records start/end sample numbers and source URLs so subsequent runs can skip previously used ranges.
+
 Large datasets can be processed in parallel batches and merged without doubling disk usage via:
 
 ```bash
