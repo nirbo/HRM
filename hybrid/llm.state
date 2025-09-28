@@ -1662,3 +1662,40 @@
 ### Action Log
 - 2025-09-28T07:00:47+00:00: Refined aria2c post-processing to detect new files by name/size and rename when necessary.
 
+### Action Log
+- 2025-09-28T07:04:42+00:00: Updated dataset slice script to place temps alongside output and improve aria2c file detection/renaming.
+
+## Session 2025-09-28T07:12:36+00:00
+### Original Task Description
+- Build a single dataset management CLI that can extract arbitrary fields into JSONL and optionally convert to model triples, replacing the older scripts.
+
+### Plan
+1. Design CLI (`scripts/prepare_dataset.py`) covering field extraction, optional tokenizer reuse/training, and triple conversion.
+2. Implement extraction pipeline supporting JSONL/JSON/parquet/zst inputs with field filtering.
+3. Integrate optional triple conversion using existing tokenization logic (reuse from prepare_language_dataset).
+4. Add documentation examples and update statefile.
+
+### Action Log
+- 2025-09-28T07:15:01+00:00: Added prepare_dataset.py unified cleaner/tokenizer and documented usage in TRAINING.md.
+
+### Action Log
+- 2025-09-28T07:20:27+00:00: Added tqdm progress bars to prepare_dataset.py (extraction and triple conversion).
+
+### Action Log
+- 2025-09-28T07:21:50+00:00: Updated tqdm progress bars to use colour='green' for improved visibility.
+
+### Action Log
+- 2025-09-28T07:23:18+00:00: Customized tqdm bar format to show `n` and rate with proper spacing.
+
+### Action Log
+- 2025-09-28T07:25:02+00:00: Added optional --count-records to show n/total progress with tqdm bars.
+
+### Action Log
+- 2025-09-28T07:29:53+00:00: Added ETA to tqdm bars when --count-records is enabled.
+
+### Action Log
+- 2025-09-28T07:31:44+00:00: Updated TRAINING.md with notes on force/resume flags and progress counting.
+
+### Action Log
+- 2025-09-28T07:34:30+00:00: Auto-enabled TOKENIZERS_PARALLELISM when tokenizer threads > 0.
+

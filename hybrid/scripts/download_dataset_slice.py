@@ -156,13 +156,26 @@ def aria2c_download(url: str, dest_dir: Path, aria2c_path: str, connections: int
     subprocess.run(cmd, check=True)
     if target_path.exists():
         return target_path
+
+    def choose_candidate(files):
+        if not files:
+            return None
+        return max(files, key=lambda p: (p.stat().st_size, p.stat().st_mtime))
+
     # Look for newly created files (aria2c may adjust the suffix)
     candidates = [
         p for p in dest_dir.iterdir()
         if p.is_file() and p.name not in existing_files and not p.name.endswith('.aria2')
     ]
-    if candidates:
-        chosen = max(candidates, key=lambda p: (p.stat().st_size, p.stat().st_mtime))
+    chosen = choose_candidate(candidates)
+    if chosen is None:
+        prefix = filename.rsplit('.', 2)[0]
+        fallback = [
+            p for p in dest_dir.iterdir()
+            if p.is_file() and not p.name.endswith('.aria2') and p.name.startswith(prefix)
+        ]
+        chosen = choose_candidate(fallback)
+    if chosen is not None:
         if chosen.name != filename:
             try:
                 chosen.rename(target_path)
@@ -236,10 +249,11 @@ def main() -> None:
     else:
         target_count = None
 
-    temp_dir = Path(tempfile.mkdtemp(prefix="dataset_slice_"))
+    raw_output_path = Path(args.output).resolve()
+    raw_output_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_dir = Path(tempfile.mkdtemp(prefix="dataset_slice_", dir=str(raw_output_path.parent)))
     print(f"[INFO] Using temporary directory {temp_dir}")
 
-    raw_output_path = Path(args.output)
     if args.compress and not raw_output_path.name.endswith(".zst"):
         print("[WARN] Output extension is not .zst while --compress is set")
 

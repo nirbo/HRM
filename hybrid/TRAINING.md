@@ -64,6 +64,38 @@ python scripts/download_dataset_slice.py \
 
 Each run writes a metadata JSON alongside the slice (default `<output>.meta.json`) that records start/end sample numbers and source URLs so subsequent runs can skip previously used ranges.
 
+### Cleaning and tokenizing datasets with one command
+
+Use `scripts/prepare_dataset.py` to extract fields from a dataset and optionally convert the result into train/val/test triples ready for the trainer.
+
+**Example – keep only the `text` field**
+
+```bash
+python scripts/prepare_dataset.py \
+  --source datasets/nemotroncc_high_quality.zst \
+  --output-dir datasets/nemotron_clean \
+  --fields text
+```
+
+This writes `datasets/nemotron_clean/extracted.jsonl` containing records with only the requested field.
+
+**Example – extract and tokenize into triples**
+
+```bash
+python scripts/prepare_dataset.py \
+  --source datasets/nemotroncc_high_quality.zst \
+  --output-dir datasets/nemotron_tokenized \
+  --fields text \
+  --to-triples \
+  --text-field text \
+  --tokenizer tokenizer.json \
+  --max-seq-len 512 \
+  --val-ratio 0.01 \
+  --test-ratio 0.01
+```
+
+The script produces `extracted.jsonl` plus `train.jsonl`, `val.jsonl`, `test.jsonl`, and `meta.json` containing tokenized triples. If `tokenizer.json` does not exist it is trained automatically (configurable via `--vocab-size`, `--tokenizer-num-threads`, etc.). Subsequent runs reuse those outputs; add `--force-extract` and/or `--force-triples` to redo stages, and `--count-records` if you want progress bars to display total counts and ETA (pre-pass required).
+
 Large datasets can be processed in parallel batches and merged without doubling disk usage via:
 
 ```bash
