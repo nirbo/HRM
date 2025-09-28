@@ -112,7 +112,41 @@ def build_sample_text(record: dict) -> Optional[str]:
     parts.append(prompt.strip())
   if isinstance(response, str) and response.strip():
     parts.append(response.strip())
-  return '\n'.join(parts) if parts else None
+  if parts:
+    return '\n'.join(parts)
+
+  instruction = record.get('instruction')
+  output = record.get('output')
+  instruction_parts = []
+  if isinstance(instruction, str):
+    cleaned_instruction = clean_text(instruction)
+    if cleaned_instruction:
+      instruction_parts.append(cleaned_instruction)
+  if isinstance(output, str):
+    cleaned_output = clean_text(output)
+    if cleaned_output:
+      instruction_parts.append(cleaned_output)
+  if instruction_parts:
+    return '\n'.join(instruction_parts)
+
+  conversations = record.get('conversations')
+  if isinstance(conversations, list):
+    conversation_parts: List[str] = []
+    for turn in conversations:
+      if not isinstance(turn, dict):
+        continue
+      value = clean_text(turn.get('value'))
+      if not value:
+        continue
+      speaker = turn.get('from')
+      if isinstance(speaker, str) and speaker.strip():
+        conversation_parts.append(f"{speaker.strip().capitalize()}: {value}")
+      else:
+        conversation_parts.append(value)
+    if conversation_parts:
+      return '\n'.join(conversation_parts)
+
+  return None
 
 def iter_source_text(path: Path, text_fields: Optional[List[str]]) -> Iterator[str]:
   suffix = path.suffix.lower()

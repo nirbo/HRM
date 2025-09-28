@@ -1549,3 +1549,21 @@
 ### Pending Steps
 - None; awaiting push confirmation and user verification.
 
+### Action Log
+- 2025-09-28T02:47:14Z: Pushed commit 8cbc05f to origin/cuda-dev.
+
+### Current Summary
+- Per-slice validation logging is implemented, configuration points to component datasets, and latest changes are live on remote.
+
+### Pending Steps
+- Await training run feedback; no further actions queued.
+
+### Action Log
+- 2025-09-28T03:53:27+00:00: Noted OpenHermes preprocessing produced zero samples; preparing script update to handle conversation-style records.
+
+### Pending Steps
+- Enhance prepare_language_dataset.py to parse conversation arrays before rerunning OpenHermes.
+
+### Action Log
+- 2025-09-28T03:59:15+00:00: Updated prepare_language_dataset.py to parse conversation-style records and regenerated OpenHermes splits (1,216,341 train / 12,271 val).
+
