@@ -83,11 +83,12 @@ python -m hrm_lm.training.train \
   --tokenizer tokenizer.json \
   --max-seq-len 512 \
   --val-ratio 0.01 \
+  --test-ratio 0.01 \
   --tokenizer-num-threads 30 \
   --tokenizer-batch-size 8192
 ```
 
-   - Repeat the tokenization command for MBPP and ScienceQA (changing the `--source` and `--dest` paths accordingly).
+   - Repeat the tokenization command for MBPP and ScienceQA (changing the `--source` and `--dest` paths accordingly). When the dataset was downloaded via `datasets.load_dataset`, you can point `--source` directly at the cached directory under `~/.cache/huggingface/datasets/<provider>___<name>/<config>/<rev>/`; the converter will preserve any official validation/test shards and still fall back to the holdout ratios above if they are absent.
 
 3. **Merge with Wikipedia**
    - Start with a 90/5/5 mix (language/math/trace) by concatenating batches offline:
@@ -101,12 +102,13 @@ python scripts/merge_prepared_batches.py \
   --weights 0.90 0.05 0.05 \
   --output datasets/hybrid_mix_stageB \
   --train-samples 5000000 \
-  --val-samples 20000
+  --val-samples 20000 \
+  --test-samples 20000
 ```
 
    - (Optional) Append `datasets/reasoning/scienceqa/processed` to `--sources` with an adjusted weight (e.g., `0.90 0.05 0.03 0.02`) to include rationale-heavy examples.
 
-   - The script streams each source split and writes a combined `train.jsonl`, `val.jsonl`, and `meta.json`; adjust weights as needed.
+   - The script streams each source split and writes combined `train.jsonl`, `val.jsonl`, `test.jsonl`, plus refreshed metadata; adjust weights/quotas as needed to keep evaluation coverage consistent across topics.
 
 4. **Resume training with auxiliaries enabled**
 

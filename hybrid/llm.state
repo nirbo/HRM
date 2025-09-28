@@ -1608,3 +1608,21 @@
 - 2025-09-28T04:18:44+00:00: Extended merge_prepared_batches.py to mix optional test splits and expose --test-samples quota control.
 - 2025-09-28T04:18:44+00:00: Verified AI2 ARC preprocessing using the new flow (936 train / 116 val / 118 test with max_files=1) and reran compileall on updated scripts.
 
+### Action Log
+- 2025-09-28T04:20:17+00:00: Committed preprocessing and merge enhancements (a2ce248) and pushed to origin/cuda-dev.
+
+### Action Log
+- 2025-09-28T04:24:13+00:00: User requested documentation updates for script usage; preparing plan to modify TRAINING.md / REASON-TRAINING.md accordingly.
+
+### Action Log
+- 2025-09-28T04:25:45+00:00: Updated TRAINING.md and REASON-TRAINING.md with new split-handling instructions (test outputs, cache usage, merge quotas).
+
+### Action Log
+- 2025-09-28T04:26:21+00:00: Committed documentation refresh (5518bea) detailing split-aware preprocessing and pushed to origin/cuda-dev.
+
+### Action Log
+- 2025-09-28T04:26:47+00:00: Amended documentation commit to include statefile and force-pushed updated revision (dfd6c50).
+
+### Action Log
+- 2025-09-28T04:27:10+00:00: Finalized doc update commit (28ea097) after syncing statefile and force-pushed to origin/cuda-dev.
+

@@ -1,11 +1,9 @@
-Improve dataset split handling for preprocessing and merges
+Document dataset split workflow usage
 
 Summary:
-- extend prepare_language_dataset.py to detect train/validation/test files automatically, reserve configurable holdouts when official splits are missing, and emit test.jsonl alongside updated metadata.
-- add detection of speaker-style conversation records and reuse tokenizer batches for each split while tracking sample counts.
-- update merge_prepared_batches.py to balance optional test splits with --test-samples quotas and propagate test metadata in the mixed dataset outputs.
-- instrument scripts to compile cleanly and verified the new flow on ai2_arc assets.
+- describe automatic train/val/test detection, test holdouts, and Hugging Face cache reuse in TRAINING.md.
+- update REASON-TRAINING.md stage-B recipe to include --test-ratio, cache guidance, and balanced --test-samples merge quotas.
+- log statefile updates reflecting the documentation refresh.
 
 Tests:
-- python -m compileall scripts/prepare_language_dataset.py scripts/merge_prepared_batches.py
-- ./venv/bin/python scripts/prepare_language_dataset.py --source datasets/reasoning/ai2_arc/raw --dest datasets/reasoning/ai2_arc/processed_test --tokenizer tokenizer.json --max-seq-len 128 --val-ratio 0.1 --test-ratio 0.1 --max-files 1 (manual smoke)
+- (docs only)

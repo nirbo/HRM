@@ -27,8 +27,8 @@ PYTHONPATH=src uv run python scripts/prepare_language_dataset.py \
   --val-ratio 0.02
 ```
 
-If `--tokenizer` points to an existing `tokenizer.json`, it is reused; otherwise a new BPE tokenizer (Hugging Face format) is trained and saved alongside the processed dataset. The script writes `train.jsonl`, `val.jsonl`, the tokenizer JSON, and `meta.json` containing padding IDs and vocab size. Each sample stores `encoder_ids`, `decoder_input_ids`, and `labels` arrays of tokens ready for loading.
-Optional flags: `--tokenizer-num-threads` to cap CPU threads, `--tokenizer-batch-size` to control encoding batch size, and `--max-files` for quick smoke tests.
+If `--tokenizer` points to an existing `tokenizer.json`, it is reused; otherwise a new BPE tokenizer (Hugging Face format) is trained and saved alongside the processed dataset. The script now writes `train.jsonl`, `val.jsonl`, `test.jsonl`, the tokenizer JSON, and `meta.json` containing padding IDs, vocab size, and split counts. Each sample stores `encoder_ids`, `decoder_input_ids`, and `labels` arrays of tokens ready for loading.
+Optional flags: `--tokenizer-num-threads` to cap CPU threads, `--tokenizer-batch-size` to control encoding batch size, `--max-files` for quick smoke tests, and `--test-ratio` to reserve an explicit test hold-out when the raw source lacks an official test split (defaults to the validation ratio). The converter auto-detects Hugging Face style file names—if the source directory already includes `train`, `validation`, or `test` files (e.g. when pointing directly at `~/.cache/huggingface/datasets/<provider>/<dataset>/<config>/<rev>/`), those splits are preserved verbatim instead of being re-sampled.
 
 Large datasets can be processed in parallel batches and merged without doubling disk usage via:
 
@@ -38,7 +38,7 @@ PYTHONPATH=src python scripts/merge_prepared_batches.py \
   --output-dir datasets/redpj/combined
 ```
 
-This command streams each chunk’s `train.jsonl`/`val.jsonl` into consolidated files, writes an aggregated `meta.json`, and deletes chunk directories by default (pass `--keep-chunks` to retain them).
+This command streams each chunk’s `train.jsonl` / `val.jsonl` / `test.jsonl` into consolidated files, writes an aggregated `meta.json`, and deletes chunk directories by default (pass `--keep-chunks` to retain them). When you want to blend multiple processed datasets, `merge_prepared_batches.py` also accepts `--sources`, `--weights`, and optional `--train-samples` / `--val-samples` / `--test-samples` quotas so every split ends up with balanced sample counts.
 
 Large raw text dumps (for example Wikipedia) can be chunked locally before feeding the standard converter:
 
