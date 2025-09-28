@@ -139,7 +139,7 @@ def merge_batches(batch_root: Path, output_dir: Path, keep_chunks: bool) -> None
     batch_root.rmdir()  # Remove the now-empty batch root directory.
 
 
-def mix_processed_datasets(sources: List[Path], weights: List[float], output: Path, train_samples: Optional[int], val_samples: Optional[int]) -> None:
+def mix_processed_datasets(sources: List[Path], weights: List[float], output: Path, train_samples: Optional[int], val_samples: Optional[int], test_samples: Optional[int]) -> None:
   """Interleave processed datasets according to ``weights`` into ``output``."""
   if len(sources) != len(weights):
     raise ValueError('Number of sources must match number of weights')
@@ -156,9 +156,10 @@ def mix_processed_datasets(sources: List[Path], weights: List[float], output: Pa
   output.mkdir(parents=True, exist_ok=True)
   train_out = output / 'train.jsonl'
   val_out = output / 'val.jsonl'
+  test_out = output / 'test.jsonl'
   meta_out = output / 'meta.json'
-  if train_out.exists() or val_out.exists():
-    raise FileExistsError(f'Destination {output} already contains train/val files')
+  if train_out.exists() or val_out.exists() or test_out.exists():
+    raise FileExistsError(f'Destination {output} already contains output files')
 
   weight_sum = sum(weights)
   if weight_sum <= 0:
@@ -167,8 +168,10 @@ def mix_processed_datasets(sources: List[Path], weights: List[float], output: Pa
 
   max_train = max(meta.get('train_samples', 0) for meta in metas)
   max_val = max(meta.get('val_samples', 0) for meta in metas)
+  max_test = max(meta.get('test_samples', 0) for meta in metas)
   target_train = train_samples if train_samples and train_samples > 0 else max_train
   target_val = val_samples if val_samples and val_samples > 0 else max_val
+  target_test = test_samples if test_samples and test_samples > 0 else max_test
 
   def compute_targets(total: int) -> List[int]:
     if total <= 0:
@@ -186,17 +189,25 @@ def mix_processed_datasets(sources: List[Path], weights: List[float], output: Pa
 
   train_targets = compute_targets(target_train)
   val_targets = compute_targets(target_val)
+  test_targets = compute_targets(target_test)
 
   def write_split(split: str, targets: List[int]):
-    out_path = train_out if split == 'train' else val_out
+    if split == 'train':
+      out_path = train_out
+    elif split == 'val':
+      out_path = val_out
+    else:
+      out_path = test_out
     with out_path.open('w', encoding='utf-8') as out_handle:
       for directory, quota, meta in zip(sources, targets, metas):
         if quota <= 0:
           continue
-        file_path = directory / f'{split}.jsonl'
+        split_key = 'val' if split == 'val' else split
+        file_path = directory / f'{split_key}.jsonl'
         if not file_path.exists():
           continue
-        available = meta.get(f'{split}_samples', 0)
+        meta_key = f'{split_key}_samples'
+        available = meta.get(meta_key, 0)
         if available <= 0:
           continue
         if quota <= available:
@@ -216,15 +227,19 @@ def mix_processed_datasets(sources: List[Path], weights: List[float], output: Pa
               out_handle.write(line)
           for idx in range(remainder):
             out_handle.write(lines[idx])
-
   write_split('train', train_targets)
   write_split('val', val_targets)
+  if target_test > 0:
+    write_split('test', test_targets)
+  else:
+    test_out.touch()
 
   exemplar_meta = metas[0]
   consolidated_meta = {
     'max_seq_len': exemplar_meta.get('max_seq_len', 0),
     'train_samples': sum(train_targets),
     'val_samples': sum(val_targets),
+    'test_samples': sum(test_targets),
     'vocab_size': exemplar_meta.get('vocab_size', 0),
     'tokenizer_file': exemplar_meta.get('tokenizer_file', ''),
     'pad_id': exemplar_meta.get('pad_id', 0),
@@ -247,6 +262,7 @@ if __name__ == '__main__':  # Execute CLI logic when the module is invoked direc
   parser.add_argument('--output', type=Path, help='Destination directory for the mixed dataset.')  # Output for mixing mode.
   parser.add_argument('--train-samples', type=int, default=0, help='Target number of mixed training samples (default: largest source).')  # Optional train sample cap.
   parser.add_argument('--val-samples', type=int, default=0, help='Target number of mixed validation samples (default: largest source).')  # Optional val sample cap.
+  parser.add_argument('--test-samples', type=int, default=0, help='Target number of mixed test samples (default: largest source).')  # Optional test sample cap.
   args = parser.parse_args()  # Parse command-line arguments into a namespace.
 
   if args.sources:
@@ -260,6 +276,7 @@ if __name__ == '__main__':  # Execute CLI logic when the module is invoked direc
       output=args.output,
       train_samples=args.train_samples,
       val_samples=args.val_samples,
+      test_samples=args.test_samples,
     )
   else:
     if not args.batches or not args.output_dir:

@@ -1,9 +1,11 @@
-Handle conversation datasets in language preprocessor
+Improve dataset split handling for preprocessing and merges
 
 Summary:
-- extend build_sample_text to accept instruction/output pairs and conversation turn arrays when prompt/response fields are missing.
-- label conversation turns with speaker names and normalize whitespace so OpenHermes-style records yield usable text.
-- regenerate the OpenHermes processed split, now emitting ~1.22M train and ~12k val samples for slice evaluation.
+- extend prepare_language_dataset.py to detect train/validation/test files automatically, reserve configurable holdouts when official splits are missing, and emit test.jsonl alongside updated metadata.
+- add detection of speaker-style conversation records and reuse tokenizer batches for each split while tracking sample counts.
+- update merge_prepared_batches.py to balance optional test splits with --test-samples quotas and propagate test metadata in the mixed dataset outputs.
+- instrument scripts to compile cleanly and verified the new flow on ai2_arc assets.
 
 Tests:
-- python -m compileall scripts/prepare_language_dataset.py
+- python -m compileall scripts/prepare_language_dataset.py scripts/merge_prepared_batches.py
+- ./venv/bin/python scripts/prepare_language_dataset.py --source datasets/reasoning/ai2_arc/raw --dest datasets/reasoning/ai2_arc/processed_test --tokenizer tokenizer.json --max-seq-len 128 --val-ratio 0.1 --test-ratio 0.1 --max-files 1 (manual smoke)

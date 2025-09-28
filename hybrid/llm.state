@@ -1567,3 +1567,44 @@
 ### Action Log
 - 2025-09-28T03:59:15+00:00: Updated prepare_language_dataset.py to parse conversation-style records and regenerated OpenHermes splits (1,216,341 train / 12,271 val).
 
+### Action Log
+- 2025-09-28T03:59:50+00:00: Committed OpenHermes preprocessing fix (e675044) and pushed to origin/cuda-dev.
+
+### Action Log
+- 2025-09-28T04:05:06+00:00: Reviewed training launch logs noting large variation in validation slice sizes; preparing guidance on capping and weighting per-slice eval to stabilize aggregate metrics.
+
+### Plan
+1. Catalog raw dataset files for each reasoning source (train/val/test presence).
+2. Count samples within available splits to evaluate suitability for validation.
+3. Summarize findings in llm.state and prepare recommendations for balanced eval usage.
+
+### Action Log
+- 2025-09-28T04:09:41+00:00: Enumerated raw dataset splits; only train files present. Counts:
+  * ai2_arc: train=1,119
+  * alpaca_cleaned: train=51,760
+  * commonsense_qa: train=9,741
+  * cosmos_qa: train=25,262
+  * dolly: train=15,011
+  * gsm8k: train=7,473
+  * hh_rlhf: train=160,749
+  * math_qa: train=29,837
+  * mbpp: train=374
+  * openhermes: train=1,001,551
+
+### Open Issues
+- No raw validation/test splits available; need derived validation quotas or new downloads if per-dataset eval requires dedicated holdouts.
+## Session 2025-09-28T04:13:27+00:00
+### Original Task Description
+- Audit Hugging Face cache for evaluation/test splits, update preprocessing pipeline to auto-detect them with fallbacks, and ensure we can build balanced eval datasets across categories.
+
+### Plan
+1. Inspect cached datasets to determine available splits and sample counts (train/validation/test).
+2. Update preprocessing scripts to consume cached validation/test splits when present, with fallback to holdout sampling when absent.
+3. Adjust merge workflow to build balanced evaluation datasets across categories and document the fallback strategy.
+4. Validate changes (syntactic checks) and log findings in statefile.
+
+### Action Log
+- 2025-09-28T04:18:44+00:00: Updated prepare_language_dataset.py to auto-detect train/validation/test splits, fall back to configurable holdouts, and emit test.jsonl with metadata counts.
+- 2025-09-28T04:18:44+00:00: Extended merge_prepared_batches.py to mix optional test splits and expose --test-samples quota control.
+- 2025-09-28T04:18:44+00:00: Verified AI2 ARC preprocessing using the new flow (936 train / 116 val / 118 test with max_files=1) and reran compileall on updated scripts.
+

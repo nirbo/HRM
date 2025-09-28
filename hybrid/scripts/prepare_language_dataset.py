@@ -164,24 +164,41 @@ def iter_source_text(path: Path, text_fields: Optional[List[str]]) -> Iterator[s
 # ---------------------------------------------------------------------------
 
 
-def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, vocab_size: int, tokenizer_threads: int, tokenizer_batch: int, max_seq_len: int, val_ratio: float, seed: int, max_files: Optional[int] = None, text_fields: Optional[List[str]] = None) -> None:
+def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, vocab_size: int, tokenizer_threads: int, tokenizer_batch: int, max_seq_len: int, val_ratio: float, seed: int, max_files: Optional[int] = None, text_fields: Optional[List[str]] = None, test_ratio: Optional[float] = None) -> None:
   random.seed(seed)
   dest_dir.mkdir(parents=True, exist_ok=True)
 
   patterns = ['*.parquet', '*.jsonl', '*.json', '*.jsonl.gz']
-  source_files = []
+  split_files = {'train': [], 'validation': [], 'test': []}
+
+  def resolve_split(path: Path) -> str:
+    lowered = str(path).lower()
+    parts = [p.lower() for p in path.parts]
+    if any(token in lowered for token in ('validation', 'valid', 'val')) or any(token in parts for token in ('validation', 'valid', 'val')):
+      return 'validation'
+    if 'test' in lowered or 'test' in parts:
+      return 'test'
+    return 'train'
+
   for pattern in patterns:
-    source_files.extend(sorted(source_dir.glob(pattern)))
+    for file_path in sorted(source_dir.rglob(pattern)):
+      if file_path.is_dir():
+        continue
+      split = resolve_split(file_path)
+      split_files.setdefault(split, []).append(file_path)
+
+  if not split_files['train']:
+    raise ValueError(f'Unable to locate training files in {source_dir}')
+
   if max_files is not None:
-    source_files = source_files[:max_files]
-  if not source_files:
-    raise ValueError(f'No supported data files found in {source_dir}')
+    split_files['train'] = split_files['train'][:max_files]
 
   if tokenizer_threads > 0:
     os.environ['RAYON_NUM_THREADS'] = str(tokenizer_threads)
     os.environ['TOKENIZERS_PARALLELISM'] = 'true'
 
   # Train or load tokenizer -------------------------------------------------
+  tokenizer_sources = split_files['train'] + split_files.get('validation', []) + split_files.get('test', [])
   if tokenizer_path.exists():
     tokenizer = Tokenizer.from_file(str(tokenizer_path))
   else:
@@ -191,7 +208,7 @@ def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, voca
     trainer = BpeTrainer(vocab_size=vocab_size, special_tokens=['<pad>', '<bos>', '<eos>', '<unk>'])
 
     def text_iterator():
-      for file_path in source_files:
+      for file_path in tokenizer_sources:
         yield from iter_source_text(file_path, text_fields)
 
     tokenizer.train_from_iterator(text_iterator(), trainer=trainer)
@@ -206,10 +223,26 @@ def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, voca
   max_tokens = max(1, max_seq_len - 2)  # room for BOS/EOS
   train_path = dest_dir / 'train.jsonl'
   val_path = dest_dir / 'val.jsonl'
+  test_path = dest_dir / 'test.jsonl'
   meta_path = dest_dir / 'meta.json'
 
   train_count = 0
   val_count = 0
+  test_count = 0
+
+  val_ratio = max(val_ratio, 0.0)
+  if test_ratio is None:
+    test_ratio = val_ratio
+  test_ratio = max(test_ratio, 0.0)
+
+  official_val = bool(split_files['validation'])
+  official_test = bool(split_files['test'])
+
+  val_holdout_ratio = 0.0 if official_val else val_ratio
+  test_holdout_ratio = 0.0 if official_test else test_ratio
+  total_holdout = val_holdout_ratio + test_holdout_ratio
+  if total_holdout >= 1.0:
+    raise ValueError('Combined validation/test ratios must sum to less than 1.0 when derived from training data.')
 
   progress = Progress(
     SpinnerColumn(),
@@ -222,62 +255,101 @@ def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, voca
     transient=True,
   )
 
-  with train_path.open('w', encoding='utf-8') as train_f, val_path.open('w', encoding='utf-8') as val_f:
+  def write_sample(writer, seq):
+    sample = {
+      'encoder_ids': seq[:-1],
+      'decoder_input_ids': seq[:-1],
+      'labels': seq[1:],
+    }
+    json.dump(sample, writer)
+    writer.write('\n')
+
+  def encode_stream(files: List[Path], assign_func):
+    buffer: List[str] = []
+
+    def flush_buffer() -> None:
+      nonlocal buffer
+      if not buffer:
+        return
+      encodings = tokenizer.encode_batch(buffer)
+      emitted = 0
+      for encoding in encodings:
+        tokens = encoding.ids
+        if not tokens:
+          continue
+        start = 0
+        while start < len(tokens):
+          chunk_tokens = tokens[start:start + max_tokens]
+          start += max_tokens
+          if not chunk_tokens:
+            break
+          seq = [bos_id] + chunk_tokens + [eos_id]
+          assign_func(seq)
+          emitted += 1
+      progress.update(samples_task, advance=emitted)
+      buffer = []
+
+    for source_path in files:
+      for text in iter_source_text(source_path, text_fields):
+        buffer.append(text)
+        if len(buffer) >= tokenizer_batch:
+          flush_buffer()
+      flush_buffer()
+      progress.update(files_task, advance=1)
+
+  with train_path.open('w', encoding='utf-8') as train_f, \
+       val_path.open('w', encoding='utf-8') as val_f, \
+       test_path.open('w', encoding='utf-8') as test_f:
+
+    files_total = sum(len(files) for files in split_files.values()) or len(split_files['train'])
     with progress:
-      files_task = progress.add_task('files', total=len(source_files))
+      files_task = progress.add_task('files', total=files_total)
       samples_task = progress.add_task('samples', total=None)
 
-      for source_path in source_files:
-        buffer = []
-        def flush_buffer():
-          nonlocal buffer, train_count, val_count
-          if not buffer:
-            return
-          encodings = tokenizer.encode_batch(buffer)
-          emitted = 0
-          for encoding in encodings:
-            tokens = encoding.ids
-            if not tokens:
-              continue
-            start = 0
-            while start < len(tokens):
-              chunk_tokens = tokens[start:start + max_tokens]
-              start += max_tokens
-              if not chunk_tokens:
-                break
-              seq = [bos_id] + chunk_tokens + [eos_id]
-              decoder_in = seq[:-1]
-              labels = seq[1:]
-              sample = {
-                'encoder_ids': decoder_in,
-                'decoder_input_ids': decoder_in,
-                'labels': labels,
-              }
-              target_f = train_f if random.random() > val_ratio else val_f
-              json.dump(sample, target_f)
-              target_f.write('\n')
-              if target_f is train_f:
-                train_count += 1
-              else:
-                val_count += 1
-              emitted += 1
-          progress.update(samples_task, advance=emitted)
-          buffer = []
+      # Process training data (with optional holdouts)
+      def assign_train(seq):
+        nonlocal train_count, val_count, test_count
+        destination = 'train'
+        if total_holdout > 0.0:
+          r = random.random()
+          if test_holdout_ratio > 0.0 and r < test_holdout_ratio:
+            destination = 'test'
+          elif val_holdout_ratio > 0.0 and r < test_holdout_ratio + val_holdout_ratio:
+            destination = 'validation'
+        if destination == 'validation':
+          write_sample(val_f, seq)
+          val_count += 1
+        elif destination == 'test':
+          write_sample(test_f, seq)
+          test_count += 1
+        else:
+          write_sample(train_f, seq)
+          train_count += 1
 
-        for text in iter_source_text(source_path, text_fields):
-          buffer.append(text)
-          if len(buffer) >= tokenizer_batch:
-            flush_buffer()
+      encode_stream(split_files['train'], assign_train)
 
-        flush_buffer()
-        progress.update(files_task, advance=1)
+      # Process official validation split if present
+      if official_val:
+        def assign_val(seq):
+          nonlocal val_count
+          write_sample(val_f, seq)
+          val_count += 1
+        encode_stream(split_files['validation'], assign_val)
+
+      # Process official test split if present
+      if official_test:
+        def assign_test(seq):
+          nonlocal test_count
+          write_sample(test_f, seq)
+          test_count += 1
+        encode_stream(split_files['test'], assign_test)
 
   meta = {
     'max_seq_len': max_seq_len,
     'train_samples': train_count,
     'val_samples': val_count,
+    'test_samples': test_count,
     'vocab_size': tokenizer.get_vocab_size(),
-    'source_files': len(source_files),
     'tokenizer_file': str(tokenizer_path.resolve()),
     'pad_id': pad_id,
     'bos_id': bos_id,
@@ -285,7 +357,7 @@ def convert_dataset(source_dir: Path, dest_dir: Path, tokenizer_path: Path, voca
   }
   with meta_path.open('w', encoding='utf-8') as f:
     json.dump(meta, f, indent=2)
-  print(f"Wrote {train_count} train and {val_count} val samples to {dest_dir}")
+  print(f"Wrote {train_count} train, {val_count} val, and {test_count} test samples to {dest_dir}")
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +374,7 @@ if __name__ == '__main__':
   parser.add_argument('--tokenizer-batch-size', type=int, default=256, help='Number of texts to encode per batch.')
   parser.add_argument('--max-seq-len', type=int, default=256)
   parser.add_argument('--val-ratio', type=float, default=0.02)
+  parser.add_argument('--test-ratio', type=float, default=None, help='Portion of training samples to reserve for testing when no official test split exists (defaults to val ratio).')
   parser.add_argument('--seed', type=int, default=1337)
   parser.add_argument('--max-files', type=int, default=None, help='Optional limit on number of parquet files to process (useful for smoke tests).')
   parser.add_argument('--text-field', action='append', dest='text_fields', default=None,
@@ -318,6 +391,7 @@ if __name__ == '__main__':
     tokenizer_batch=args.tokenizer_batch_size,
     max_seq_len=args.max_seq_len,
     val_ratio=args.val_ratio,
+    test_ratio=args.test_ratio,
     seed=args.seed,
     max_files=args.max_files,
     text_fields=args.text_fields,
