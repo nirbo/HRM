@@ -41,10 +41,10 @@ model:
     d_model: 2048
     h_len: 8
     l_len: 64
-    h_layers: 8
-    l_layers: 8
-    h_cycles: 12
-    l_steps: 12
+    h_layers: 6
+    l_layers: 6
+    h_cycles: 6
+    l_steps: 4
     approx_grad: one_step
     use_halting: true
     halting_weight: 0.05
@@ -71,8 +71,8 @@ train:
     name: warmup_stable_decay
     kwargs:
       num_warmup_steps: 31       # ~1000 raw steps / (batch 8 * accum 4)
-      num_stable_steps: 127      # ~4060 raw steps / (batch 8 * accum 4)
-      num_decay_steps: 62        # ~2000 raw steps / (batch 8 * accum 4)
+      num_stable_steps: 158      # ~5040 raw steps / (batch 8 * accum 4)
+      num_decay_steps: 78        # ~2500 raw steps / (batch 8 * accum 4)
       cooldown_type: '1-sqrt'    # default; cosine also works if you prefer smoother tail
       min_lr_ratio: 0.02         # floor for the tail (tweak as needed)
   seed: 42

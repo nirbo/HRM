@@ -1,8 +1,8 @@
-Title: Adjust RWKV7 schedule for batch 8 accum 4 training
+Title: Stretch RWKV7 scheduler for 512-token dataset
 
 Summary:
-- drop training batch size to 8, set grad_accum_steps=4, and align eval batch size in rwkv7_lora config.
-- recompute warmup/stable/decay steps to 31/127/62 for 7,060-sample split under effective batch 32.
+- bump stable/decay steps in rwkv7_lora scheduler to 158/78 to match 7,899-train / 880-val splits (batch 8, accum 4).
+- log the recalculation in llm.state for traceability.
 
 Testing:
-- n/a (config-only change)
+- n/a (config-only update)
