@@ -1952,3 +1952,4 @@
 2025-10-01T00:50Z: Added gradient checkpointing toggle (config + CLI) and RWKV7 encoder checkpoint wrapper to reduce activation memory (use_reentrant=False).
 2025-10-01T00:55Z: Added --override CLI for dot-path config overrides; uses yaml parsing and updates OmegaConf before training.
 2025-10-01T01:05Z: Updated rwkv7_lora.yaml for batch_size=2, eval_batch_size=2, grad_accum_steps=16; rescaled warmup/stable/decay to 31/137/79 (247 optimizer steps).
+2025-10-01T01:42Z: Frozen HRM/decoder/bridges by default and tightened LoRA train_parts; trainable params now ~7.1M (LoRA only). Short sanity run succeeds with grad=0 due to freezings before optimizer step? (expected LoRA).

@@ -25,6 +25,7 @@ class HRMLanguageModel(nn.Module):
     bridge_cfg,
     enc_backend="transformer",
     encoder_cfg=None,
+    decoder_cfg=None,
   ):
     super().__init__()
     self.encoder = LMEncoder(
@@ -35,6 +36,7 @@ class HRMLanguageModel(nn.Module):
       backend=enc_backend,
       encoder_cfg=encoder_cfg,
     )
+    decoder_cfg = decoder_cfg or {}
     self.prompt2hrm = PromptToHRMBridge(d_model)
     use_halting = hrm_cfg.get("use_halting", False)
     self.hrm = HRMCore(
@@ -74,6 +76,20 @@ class HRMLanguageModel(nn.Module):
       "gate_bias", torch.tensor(gate_bias_cfg, dtype=torch.float32)
     )
     self.supports_cuda_graphs = bool(getattr(self.encoder, 'supports_cuda_graphs', True))  # expose encoder capture capability to the trainer
+
+    bridge_trainable = bool(bridge_cfg.get('trainable', False))
+    if not bridge_trainable:
+      self.prompt2hrm.requires_grad_(False)
+      self.hrm2dec.requires_grad_(False)
+
+    hrm_trainable = bool(hrm_cfg.get('trainable', False))
+    if not hrm_trainable:
+      self.hrm.requires_grad_(False)
+      self.hrm_gate.requires_grad_(False)
+
+    decoder_trainable = bool(decoder_cfg.get('trainable', False))
+    if not decoder_trainable:
+      self.decoder.requires_grad_(False)
 
   def forward(
     self,
@@ -180,4 +196,3 @@ class HRMLanguageModel(nn.Module):
       result['moe_aux_penalty'] = moe_aux_penalty
 
     return result
-

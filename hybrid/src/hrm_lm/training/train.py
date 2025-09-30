@@ -112,6 +112,7 @@ def make_model(cfg) -> HRMLanguageModel:
     bridge_cfg=dict(cfg.bridge),
     enc_backend=cfg.model.encoder.backend,
     encoder_cfg=encoder_cfg,
+    decoder_cfg=dict(cfg.model.decoder),
   )
   return model
 

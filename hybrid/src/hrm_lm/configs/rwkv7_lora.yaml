@@ -38,6 +38,7 @@ model:
   decoder:
     n_layers: 8
     max_seq_len: 512
+    trainable: false
   hrm:
     d_model: 2048
     h_len: 8
@@ -55,9 +56,11 @@ model:
     ds_weight: 0.2
     gate_scale: 1.0
     gate_bias: 0.0
+    trainable: false
 bridge:
   type: prefix
   prefix_len: 16
+  trainable: false
 optim:
   name: adamw
   lr: 1.5e-4
