@@ -387,6 +387,8 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
     self._configure_environment(max_seq_len, cfg)  # Seed environment variables so RWKV kernels compile with correct parameters
     args = self._build_args(vocab_size, d_model, n_layers, max_seq_len, cfg, self.peft_config)  # Generate TrainingArgs instance aligned with HRM configuration
     self.model = RWKV7(args)  # Instantiate RWKV-7 model using the assembled arguments
+    from rwkvt.operator import rwkvop  # Access operator to capture baseline kernel before applying PEFT overrides
+    self._builtin_kernel = rwkvop.RUN_CUDA_RWKV7g  # Preserve stock kernel callable for default backend use
     self.peft_type = self.peft_config.get('type', 'none')  # Record active PEFT mode for diagnostics
     self.peft_alias = self.peft_config.get('alias', self.peft_type)  # Track provided PEFT alias (e.g. qlora -> lora)
     self.quantization = self.peft_config.get('quantization', 'none')  # Track requested quantisation mode
@@ -415,10 +417,12 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
       'wind_chunked': self._activate_wind_chunked,  # Fast NVIDIA kernel path
       'wind_longhead': self._activate_wind_longhead,  # General-purpose CUDA/HIP kernel
       'fla_chunk': self._activate_fla_chunk,  # Flash Linear Attention fallback
+      'default': self._activate_default,  # Stock RWKV-PEFT kernel
     }
     if preference == 'default':  # Honor explicit request to keep stock kernels
       logger.info('Using default RWKV-PEFT kernels per configuration override')  # Emit informational log for transparency
-      return 'default'  # Signal that no patching occurred
+      self._activate_default(args, cfg, device_info)
+      return 'default'  # Signal that default kernel is active
     if preference != 'auto':  # Handle explicit kernel selection
       if preference not in candidate_map:  # Validate that the requested key exists
         raise ValueError(f"Unknown RWKV kernel preference '{preference}'")  # Surface configuration mistakes early
@@ -429,6 +433,7 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
     for candidate in order:  # Iterate through backend options
       if candidate == 'default':  # Default entry acts as a sentinel
         logger.info('Falling back to default RWKV-PEFT kernels')  # Record fallback decision
+        candidate_map[candidate](args, cfg, device_info)
         return 'default'  # Expose fallback outcome
       try:
         candidate_map[candidate](args, cfg, device_info)  # Attempt to activate the selected backend
@@ -444,6 +449,7 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
         stacklevel=2,
       )
     logger.info('Defaulting to RWKV-PEFT kernels after backend activation attempts')  # Confirm final fallback
+    self._activate_default(args, cfg, device_info)
     return 'default'  # Return fallback indicator
 
   def _auto_candidate_order(self, args: TrainingArgs, cfg: dict, device_info: Dict[str, object]) -> List[str]:  # Build backend priority order for auto mode
@@ -591,6 +597,29 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
 
     rwkvop.RUN_CUDA_RWKV7g = run_fla  # Patch RWKV operator to leverage FLA kernel
     self._patch_att_kernel(run_fla)
+
+  def _activate_default(self, args: TrainingArgs, cfg: dict, device_info: Dict[str, object]) -> None:  # Restore stock RWKV kernel
+    from rwkvt.operator import rwkvop
+    if not hasattr(self, '_builtin_kernel') or self._builtin_kernel is None:
+      raise RuntimeError('RWKV default kernel is unavailable; ensure RWKV-PEFT imports succeeded.')
+
+    def run_default(r: torch.Tensor, w: torch.Tensor, k: torch.Tensor, v: torch.Tensor, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+      if r.dtype != torch.bfloat16:
+        r = r.to(torch.bfloat16)
+      if w.dtype != torch.bfloat16:
+        w = w.to(torch.bfloat16)
+      if k.dtype != torch.bfloat16:
+        k = k.to(torch.bfloat16)
+      if v.dtype != torch.bfloat16:
+        v = v.to(torch.bfloat16)
+      if a.dtype != torch.bfloat16:
+        a = a.to(torch.bfloat16)
+      if b.dtype != torch.bfloat16:
+        b = b.to(torch.bfloat16)
+      return self._builtin_kernel(r, w, k, v, a, b)
+
+    rwkvop.RUN_CUDA_RWKV7g = run_default
+    self._patch_att_kernel(run_default)
 
   def forward(
     self,
