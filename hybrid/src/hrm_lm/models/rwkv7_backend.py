@@ -163,10 +163,10 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
     cfg: Dict[str, Any] = {
       'type': 'none',
       'freeze_non_peft': True,
-      'train_embeddings': True,
-      'train_head': True,
-      'train_layer_norms': True,
-      'train_parts': ['time', 'ln'],
+      'train_embeddings': False,
+      'train_head': False,
+      'train_layer_norms': False,
+      'train_parts': [],
       'quantization': 'none',
       'lora': deepcopy(base_lora),
       'pissa': deepcopy(base_pissa),
@@ -308,22 +308,35 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
       model.head.weight.requires_grad = True
     if peft_cfg.get('train_layer_norms', True):
       for name, param in model.named_parameters():
-        if 'ln' in name.lower():
+        if name.lower().endswith(('ln.weight', 'ln.bias')) or '.ln' in name.lower():
           param.requires_grad = True
 
-    for part in peft_cfg.get('train_parts', []):
-      lowered = str(part).lower()
-      if not lowered:
-        continue
-      for name, param in model.named_parameters():
-        if lowered in name.lower():
-          param.requires_grad = True
+    base_parts = peft_cfg.get('train_parts', [])
+    base_parts = [str(p).strip().lower() for p in base_parts if str(p).strip()]
+
+    if peft_type != 'lora':
+      for part in base_parts:
+        for name, param in model.named_parameters():
+          if part and f'.{part}' in name.lower():
+            param.requires_grad = True
+
+    lora_allowed = set(base_parts)
+    allow_all_lora = not lora_allowed
+
+    def lora_enabled(param_name: str) -> bool:
+      if allow_all_lora:
+        return True
+      lowered = param_name.lower()
+      return any(f'.{tag}' in lowered for tag in lora_allowed)
 
     if peft_type in {'lora', 'pissa'}:
       for name, module in model.named_modules():
+        full_prefix = name + '.' if name else ''
         for pname, param in module.named_parameters(recurse=False):
           if pname.startswith('lora_'):
-            param.requires_grad = True
+            full_name = f'{full_prefix}{pname}'
+            if lora_enabled(full_name):
+              param.requires_grad = True
     if peft_type == 'disha':
       for name, module in model.named_modules():
         for pname, param in module.named_parameters(recurse=False):

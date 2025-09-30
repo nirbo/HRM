@@ -8,9 +8,13 @@ from .rwkv7_backend import RWKV7Encoder  # wrap RWKV-7 modules for HRM integrati
 class LMEncoder(nn.Module):
   def __init__(self, vocab_size, d_model, n_layers, max_seq_len, backend='transformer', encoder_cfg=None):
     super().__init__()
-    self.tok = nn.Embedding(vocab_size, d_model)
-    self.pos = PositionalEncoding(d_model, max_len=max_seq_len)
     self.backend = backend
+    if backend == 'rwkv7':
+      self.tok = None
+      self.pos = None
+    else:
+      self.tok = nn.Embedding(vocab_size, d_model)
+      self.pos = PositionalEncoding(d_model, max_len=max_seq_len)
     encoder_cfg = encoder_cfg or {}
     self.supports_cuda_graphs = True  # assume CUDA graph support unless a backend opts out explicitly
     self.moe_aux_weight = float(encoder_cfg.get('moe', {}).get('aux_loss_weight', 0.0))

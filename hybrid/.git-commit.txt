@@ -1,9 +1,10 @@
-Title: Recalculate scheduler for batch 2 / accum 16 baseline
+Title: Freeze RWKV base weights and streamline encoder for memory usage
 
 Summary:
-- set rwkv7_lora defaults to batch_size=2, eval_batch_size=2, grad_accum_steps=16.
-- rescale warmup/stable/decay steps to 31/137/79 (247 optimizer steps) for the 7,899-sample split.
-- log scheduler change in llm.state.
+- restrict LoRA train_parts handling so substring matching no longer re-enables RWKV backbone weights; defaults set to avoid auto-training embeddings/head/LNs.
+- filter LoRA parameter enabling based on allowed tags and skip base train_parts when freeze_non_peft is true.
+- drop unused transformer token embedding for RWKV backend and set LoRA defaults (r=8, no extra parts) in config.
 
 Testing:
-- n/a (config update only)
+- PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/models/rwkv7_backend.py src/hrm_lm/models/encoder.py
+- PYTHONPATH=src timeout 60s ./venv/bin/python -m hrm_lm.training.train --config src/hrm_lm/configs/rwkv7_lora.yaml --dataset datasets/openai-gsm8k-socratic/ --batch_size 2 --grad_accum_steps 16 --steps 5 --learning_rate 0.0002 --warmup_steps 31 --lr_min_ratio 0.02 --grad_clip 1.5 --val_every 200 --run_name mem-check --checkpoint_limit 1 --mixed_precision bf16 --eval_batch_size 2 --log_steps 1 --dataset_workers 4 --save_best_model --max_seq_len 512 --max_val_samples 16 --eval_loss_patience 6 --patience_grace_steps 50 --hrm_gate_warmup_steps 100 --grad_checkpoint --optimizer tiger --override model.encoder.kernel_preference=fla_chunk

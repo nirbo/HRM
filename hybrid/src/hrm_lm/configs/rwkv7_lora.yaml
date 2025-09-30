@@ -17,12 +17,12 @@ model:
       type: lora         # options: none | lora | qlora | pissa | disha
       quantization: none # set to nf4/int8/fp8/etc for QLoRA-style training
       freeze_non_peft: true
-      train_embeddings: true
-      train_head: true
-      train_layer_norms: true
-      train_parts: ["time", "ln"]
+      train_embeddings: false
+      train_head: false
+      train_layer_norms: false
+      train_parts: []
       lora:
-        r: 16
+        r: 8
         alpha: 32
         dropout: 0.00
         load_path: ""    # optional path to resume LoRA weights
