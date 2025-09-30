@@ -7,8 +7,9 @@ import os  # Manage environment variables required by RWKV kernels
 import subprocess  # Invoke external build tools required by RWKV kernels
 import sys  # Allow dynamic path injection for local repository clones
 import warnings  # Emit runtime warnings when kernel fallbacks are triggered
+from copy import deepcopy  # Clone global PEFT templates without mutating upstream defaults
 from pathlib import Path  # Resolve filesystem paths relative to the repository
-from typing import Callable, Dict, List, Optional, Tuple  # Provide type annotations for return values
+from typing import Any, Callable, Dict, List, Optional, Tuple  # Provide type annotations for return values
 
 import torch  # Core tensor library used by the encoder wrapper
 import torch.nn as nn  # Neural network building blocks for the wrapper module
@@ -78,6 +79,9 @@ def _patched_run_ninja_build(build_directory: str, verbose: bool, error_prefix: 
 
 torch_cpp_extension._run_ninja_build = _patched_run_ninja_build
 
+os.environ.setdefault('TORCHDYNAMO_DISABLE', '1')  # Disable torch.compile ahead of RWKV module imports to avoid Dynamo assertions
+os.environ.setdefault('DISABLE_TORCH_COMPILE', '1')  # Secondary flag recognised by some runtimes
+
 # Locate the vendored RWKV-PEFT repository that holds training-ready RWKV implementations
 PEFT_ROOT = Path(__file__).resolve().parents[3] / "RWKV-PEFT"  # Derive absolute path to RWKV-PEFT clone at repo root
 if PEFT_ROOT.exists():  # Confirm the repository clone is present before importing it
@@ -100,11 +104,260 @@ os.chdir(str(PEFT_ROOT))
 try:
   from rwkvt.args_type import TrainingArgs  # Import training argument dataclass used to configure RWKV-7 modules
   from rwkvt.rwkv7.model import RWKV7  # Import the actual RWKV-7 model definition from RWKV-PEFT
+  from rwkvt.peft.rwkvLinear import DiSHA_CONFIG, LORA_CONFIG  # Import global PEFT configuration structures used to enable adapters
 finally:
   os.chdir(_cwd)
 
 
 class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 through a Transformer-like interface
+  @staticmethod
+  def _to_plain_dict(value: Optional[Any]) -> Dict[str, Any]:  # Normalise nested config mappings without requiring OmegaConf globally
+    if value is None:
+      return {}
+    if isinstance(value, dict):
+      return dict(value)
+    try:  # Avoid hard OmegaConf dependency when not installed
+      from omegaconf import DictConfig, OmegaConf  # type: ignore
+    except ImportError:  # pragma: no cover - optional dependency
+      DictConfig = None  # type: ignore
+      OmegaConf = None  # type: ignore
+    if 'DictConfig' in locals() and DictConfig is not None and isinstance(value, DictConfig):  # type: ignore
+      assert OmegaConf is not None  # narrow type for mypy
+      return dict(OmegaConf.to_container(value, resolve=True))
+    if hasattr(value, 'items'):
+      return dict(value)  # type: ignore[arg-type]
+    return {}
+
+  @classmethod
+  def _normalise_peft_config(cls, raw_cfg: Optional[Any]) -> Dict[str, Any]:  # Convert arbitrary user config into canonical PEFT settings
+    base_lora = {
+      'r': 0,
+      'alpha': 0.0,
+      'dropout': 0.0,
+      'target_parts': ['att', 'ffn'],
+      'load_path': '',
+    }
+    base_pissa = {
+      'r': 0,
+      'svd_niter': 4,
+      'target_parts': ['att', 'ffn'],
+      'load_path': '',
+      'init_path': '',
+    }
+    base_disha = {
+      'mode': 'bone',
+      'r': 0,
+      'target_parts': ['att', 'ffn'],
+      'load_path': '',
+    }
+    cfg: Dict[str, Any] = {
+      'type': 'none',
+      'freeze_non_peft': True,
+      'train_embeddings': True,
+      'train_head': True,
+      'train_layer_norms': True,
+      'train_parts': ['time', 'ln'],
+      'quantization': 'none',
+      'lora': deepcopy(base_lora),
+      'pissa': deepcopy(base_pissa),
+      'disha': deepcopy(base_disha),
+      'alias': 'none',
+    }
+
+    raw = cls._to_plain_dict(raw_cfg)
+    if not raw:
+      return cfg
+
+    alias = str(raw.get('type', 'none')).strip().lower()
+    type_map = {
+      'none': 'none',
+      'lora': 'lora',
+      'qlora': 'lora',
+      'pissa': 'pissa',
+      'disha': 'disha',
+      'bone': 'disha',
+      'bat': 'disha',
+      'rslora': 'pissa',
+      'rs-lora': 'pissa',
+    }
+    resolved_type = type_map.get(alias, 'none')
+    cfg['type'] = resolved_type
+    cfg['alias'] = alias or 'none'
+
+    for key in ('freeze_non_peft', 'train_embeddings', 'train_head', 'train_layer_norms'):
+      if key in raw:
+        cfg[key] = bool(raw[key])
+
+    if 'train_parts' in raw:
+      parts = raw['train_parts']
+      if isinstance(parts, (list, tuple)):
+        cfg['train_parts'] = [str(p).strip() for p in parts if str(p).strip()] or cfg['train_parts']
+      elif isinstance(parts, str) and parts.strip():
+        cfg['train_parts'] = [parts.strip()]
+
+    quant = str(raw.get('quantization', cfg['quantization'])).strip().lower()
+    if resolved_type == 'lora' and alias == 'qlora' and not raw.get('quantization'):
+      quant = 'nf4'
+    if quant:
+      cfg['quantization'] = quant
+
+    lora_raw = cls._to_plain_dict(raw.get('lora'))
+    if lora_raw:
+      cfg['lora']['r'] = int(lora_raw.get('r', cfg['lora']['r']))
+      cfg['lora']['alpha'] = float(lora_raw.get('alpha', cfg['lora']['alpha']))
+      cfg['lora']['dropout'] = float(lora_raw.get('dropout', cfg['lora']['dropout']))
+      if 'load_path' in lora_raw:
+        cfg['lora']['load_path'] = str(lora_raw['load_path'])
+      parts_val = lora_raw.get('target_parts') or lora_raw.get('parts')
+      if parts_val:
+        if isinstance(parts_val, (list, tuple)):
+          cfg['lora']['target_parts'] = [str(p).strip().lower() for p in parts_val if str(p).strip()] or cfg['lora']['target_parts']
+        elif isinstance(parts_val, str) and parts_val.strip():
+          cfg['lora']['target_parts'] = [parts_val.strip().lower()]
+
+    pissa_raw = cls._to_plain_dict(raw.get('pissa'))
+    if pissa_raw:
+      cfg['pissa']['r'] = int(pissa_raw.get('r', cfg['pissa']['r']))
+      cfg['pissa']['svd_niter'] = int(pissa_raw.get('svd_niter', cfg['pissa']['svd_niter']))
+      if 'load_path' in pissa_raw:
+        cfg['pissa']['load_path'] = str(pissa_raw['load_path'])
+      if 'init_path' in pissa_raw:
+        cfg['pissa']['init_path'] = str(pissa_raw['init_path'])
+      parts_val = pissa_raw.get('target_parts') or pissa_raw.get('parts')
+      if parts_val:
+        if isinstance(parts_val, (list, tuple)):
+          cfg['pissa']['target_parts'] = [str(p).strip().lower() for p in parts_val if str(p).strip()] or cfg['pissa']['target_parts']
+        elif isinstance(parts_val, str) and parts_val.strip():
+          cfg['pissa']['target_parts'] = [parts_val.strip().lower()]
+
+    disha_raw = cls._to_plain_dict(raw.get('disha'))
+    if disha_raw:
+      cfg['disha']['mode'] = str(disha_raw.get('mode', cfg['disha']['mode'])).strip().lower() or cfg['disha']['mode']
+      cfg['disha']['r'] = int(disha_raw.get('r', cfg['disha']['r']))
+      if 'load_path' in disha_raw:
+        cfg['disha']['load_path'] = str(disha_raw['load_path'])
+      parts_val = disha_raw.get('target_parts') or disha_raw.get('parts')
+      if parts_val:
+        if isinstance(parts_val, (list, tuple)):
+          cfg['disha']['target_parts'] = [str(p).strip().lower() for p in parts_val if str(p).strip()] or cfg['disha']['target_parts']
+        elif isinstance(parts_val, str) and parts_val.strip():
+          cfg['disha']['target_parts'] = [parts_val.strip().lower()]
+
+    if not cfg['lora']['target_parts']:
+      cfg['lora']['target_parts'] = ['att', 'ffn']
+    if not cfg['pissa']['target_parts']:
+      cfg['pissa']['target_parts'] = ['att', 'ffn']
+    if not cfg['disha']['target_parts']:
+      cfg['disha']['target_parts'] = ['att', 'ffn']
+    if cfg['disha']['mode'] not in {'bone', 'bat'}:
+      cfg['disha']['mode'] = 'bone'
+
+    return cfg
+
+  @staticmethod
+  def _prepare_peft_globals(peft_cfg: Dict[str, Any]) -> None:  # Configure global PEFT switches before constructing the model
+    LORA_CONFIG['r'] = 0
+    LORA_CONFIG['alpha'] = 0.0
+    LORA_CONFIG['dropout'] = 0.0
+    LORA_CONFIG['parts'] = set(peft_cfg['lora']['target_parts'])
+    LORA_CONFIG['quant'] = peft_cfg['quantization'] != 'none'
+    DiSHA_CONFIG['r'] = 0
+    DiSHA_CONFIG['mode'] = peft_cfg['disha']['mode']
+    DiSHA_CONFIG['parts'] = set(peft_cfg['disha']['target_parts'])
+
+    peft_type = peft_cfg['type']
+    if peft_type == 'lora':
+      LORA_CONFIG['r'] = int(peft_cfg['lora']['r'])
+      LORA_CONFIG['alpha'] = float(peft_cfg['lora']['alpha'])
+      LORA_CONFIG['dropout'] = float(peft_cfg['lora']['dropout'])
+      if LORA_CONFIG['r'] <= 0:
+        raise ValueError('LoRA requires `r` > 0 when peft.type is "lora".')
+    elif peft_type == 'pissa':
+      LORA_CONFIG['r'] = int(peft_cfg['pissa']['r'])
+      if LORA_CONFIG['r'] <= 0:
+        raise ValueError('PiSSA requires `r` > 0 when peft.type is "pissa".')
+    elif peft_type == 'disha':
+      DiSHA_CONFIG['r'] = int(peft_cfg['disha']['r'])
+      if DiSHA_CONFIG['r'] <= 0:
+        raise ValueError('DiSHA requires `r` > 0 when peft.type is "disha".')
+
+  def _apply_peft(self, args: TrainingArgs, peft_cfg: Dict[str, Any]) -> None:  # Freeze base weights, expose adapter params, and load checkpoints
+    peft_type = peft_cfg['type']
+    quant_type = peft_cfg['quantization']
+    freeze = bool(peft_cfg.get('freeze_non_peft', True))
+    if peft_type == 'none' and quant_type == 'none':
+      return
+
+    model = self.model
+    if freeze:
+      model.requires_grad_(False)
+
+    if peft_cfg.get('train_embeddings', True) and hasattr(model, 'emb'):
+      model.emb.weight.requires_grad = True
+    if peft_cfg.get('train_head', True) and hasattr(model, 'head'):
+      model.head.weight.requires_grad = True
+    if peft_cfg.get('train_layer_norms', True):
+      for name, param in model.named_parameters():
+        if 'ln' in name.lower():
+          param.requires_grad = True
+
+    for part in peft_cfg.get('train_parts', []):
+      lowered = str(part).lower()
+      if not lowered:
+        continue
+      for name, param in model.named_parameters():
+        if lowered in name.lower():
+          param.requires_grad = True
+
+    if peft_type in {'lora', 'pissa'}:
+      for name, module in model.named_modules():
+        for pname, param in module.named_parameters(recurse=False):
+          if pname.startswith('lora_'):
+            param.requires_grad = True
+    if peft_type == 'disha':
+      for name, module in model.named_modules():
+        for pname, param in module.named_parameters(recurse=False):
+          if 'disha' in pname:
+            param.requires_grad = True
+
+    if peft_type == 'pissa':
+      svd_niter = int(peft_cfg['pissa']['svd_niter'])
+      for name, module in model.named_modules():
+        if hasattr(module, 'pissa_init') and callable(getattr(module, 'pissa_init')):
+          module.pissa_init(svd_niter)
+
+    load_path = ''
+    if peft_type == 'lora':
+      load_path = peft_cfg['lora'].get('load_path', '')
+    elif peft_type == 'pissa':
+      load_path = peft_cfg['pissa'].get('load_path', '')
+    elif peft_type == 'disha':
+      load_path = peft_cfg['disha'].get('load_path', '')
+    load_path = str(load_path or '').strip()
+    if load_path:
+      state = torch.load(load_path, map_location='cpu')
+      load_result = self.model.load_state_dict(state, strict=False)
+      self._validate_load(load_result)
+
+    if peft_type == 'pissa':
+      init_path = str(peft_cfg['pissa'].get('init_path', '') or '').strip()
+      if init_path and os.path.isfile(init_path):
+        init_state = torch.load(init_path, map_location='cpu')
+        for name, module in model.named_modules():
+          if hasattr(module, 'pissa_load') and callable(getattr(module, 'pissa_load')):
+            key_a = f'{name}.init_lora_A'
+            key_b = f'{name}.init_lora_B'
+            if key_a in init_state and key_b in init_state:
+              module.pissa_load(init_state[key_a], init_state[key_b])
+
+    if quant_type != 'none':
+      if not torch.cuda.is_available():
+        raise RuntimeError('Requested quantized training but CUDA is unavailable.')
+      for module in model.modules():
+        quant_fn = getattr(module, 'quant', None)
+        if callable(quant_fn):
+          quant_fn(quant_type)
+
   def __init__(
     self,
     vocab_size: int,
@@ -115,13 +368,23 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
   ) -> None:
     super().__init__()  # Initialize base nn.Module state
     cfg = encoder_cfg.copy() if encoder_cfg else {}  # Create a mutable configuration dictionary for local overrides
+    self.peft_config = self._normalise_peft_config(cfg.get('peft'))  # Canonicalise PEFT configuration for downstream use
+    self._prepare_peft_globals(self.peft_config)  # Apply global adapter settings prior to model construction
     if 'checkpoint_path' not in cfg or not cfg.get('checkpoint_path'):  # Detect absent checkpoint configuration
       default_ckpt = Path(__file__).resolve().parents[3] / 'models' / 'blinkdl-rwkv7-g1a-1.5b' / 'rwkv-final.pth'  # Resolve default RWKV-7 checkpoint location bundled by the user
       if default_ckpt.is_file():  # Only adopt default when the checkpoint actually exists locally
         cfg['checkpoint_path'] = str(default_ckpt)  # Inject default checkpoint path so integration works out of the box
     self._configure_environment(max_seq_len, cfg)  # Seed environment variables so RWKV kernels compile with correct parameters
-    args = self._build_args(vocab_size, d_model, n_layers, max_seq_len, cfg)  # Generate TrainingArgs instance aligned with HRM configuration
+    args = self._build_args(vocab_size, d_model, n_layers, max_seq_len, cfg, self.peft_config)  # Generate TrainingArgs instance aligned with HRM configuration
     self.model = RWKV7(args)  # Instantiate RWKV-7 model using the assembled arguments
+    self.peft_type = self.peft_config.get('type', 'none')  # Record active PEFT mode for diagnostics
+    self.peft_alias = self.peft_config.get('alias', self.peft_type)  # Track provided PEFT alias (e.g. qlora -> lora)
+    self.quantization = self.peft_config.get('quantization', 'none')  # Track requested quantisation mode
+    if self.peft_type != 'none':
+      adapter_r = self.peft_config.get(self.peft_type, {}).get('r', 'n/a')
+      logger.info('RWKV7 PEFT enabled: type=%s alias=%s r=%s', self.peft_type, self.peft_alias, adapter_r)
+    if self.quantization != 'none':
+      logger.info('RWKV7 adapter quantization enabled: %s', self.quantization)
     self.kernel_backend = self._select_backend(args, cfg)  # Determine and activate the most efficient kernel backend before loading checkpoints
     checkpoint_path = Path(cfg.get('checkpoint_path', ''))  # Locate checkpoint path supplied by training config
     if not checkpoint_path.is_file():  # Validate that a checkpoint file is available before loading
@@ -129,6 +392,8 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
     state = torch.load(checkpoint_path, map_location='cpu')  # Load serialized parameter state onto CPU for deterministic initialization
     load_result = self.model.load_state_dict(state, strict=False)  # Populate RWKV-7 model weights while allowing head mismatches
     self._validate_load(load_result)  # Emit warnings when unexpected parameters are skipped or missing
+    self.model.to(dtype=torch.bfloat16)  # Ensure base weights reside in bfloat16 to satisfy RWKV kernel expectations
+    self._apply_peft(args, self.peft_config)  # Freeze / unfreeze parameters and load adapter checkpoints as necessary
     self.supports_cuda_graphs = False  # RWKV recurrence uses Triton/CUDA kernels that are not capture safe
 
   def _select_backend(self, args: TrainingArgs, cfg: dict) -> str:  # Decide which RWKV kernel implementation to activate
@@ -318,6 +583,8 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
     os.environ.setdefault('WKV', str(cfg.get('wkv_backend', 'cuda')))  # Opt into CUDA custom kernels when available
     os.environ.setdefault('FUSED_KERNEL', '1' if cfg.get('fused_kernel', False) else '0')  # Enable fused kernels only when explicitly requested
     os.environ.setdefault('RWKV_FLOAT_MODE', str(cfg.get('float_mode', 'bf16')))  # Match precision hints expected by RWKV kernels
+    os.environ.setdefault('TORCHDYNAMO_DISABLE', '1')  # Disable torch.compile for RWKV kernels to avoid dtype/assert issues
+    os.environ.setdefault('DISABLE_TORCH_COMPILE', '1')  # Mirror disable flag recognized by some runtimes
 
   @staticmethod
   def _build_args(
@@ -326,6 +593,7 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
     n_layers: int,
     max_seq_len: int,
     cfg: dict,
+    peft_cfg: Dict[str, Any],
   ) -> TrainingArgs:
     args = TrainingArgs()  # Start from RWKV-PEFT default argument template
     args.vocab_size = vocab_size  # Align vocabulary size with HRM configuration
@@ -339,18 +607,57 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
     args.my_testing = cfg.get('model_variant', 'x070')  # Tag variant to ensure correct kernel selection throughout the stack
     args.train_type = cfg.get('train_type', 'none')  # Respect optional training mode overrides (state / infctx)
     args.precision = cfg.get('precision', 'bf16')  # Store precision hint for downstream RWKV utilities
+
+    peft_type = peft_cfg.get('type', 'none')
+    args.peft = peft_type
+    args.quant = peft_cfg.get('quantization', 'none')
+    args.train_parts = peft_cfg.get('train_parts', ['time', 'ln'])
+
+    if peft_type == 'lora':
+      lora_cfg = peft_cfg['lora']
+      args.lora_config = {
+        'lora_load': str(lora_cfg.get('load_path', '')),
+        'lora_r': int(lora_cfg.get('r', 0)),
+        'lora_alpha': float(lora_cfg.get('alpha', 0.0)),
+        'lora_dropout': float(lora_cfg.get('dropout', 0.0)),
+      }
+    elif peft_type == 'pissa':
+      pissa_cfg = peft_cfg['pissa']
+      args.pissa_config = {
+        'pissa_load': str(pissa_cfg.get('load_path', '')),
+        'pissa_init': str(pissa_cfg.get('init_path', '')),
+        'pissa_r': int(pissa_cfg.get('r', 0)),
+        'svd_niter': int(pissa_cfg.get('svd_niter', 4)),
+      }
+    elif peft_type == 'disha':
+      disha_cfg = peft_cfg['disha']
+      args.disha_config = {
+        'mode': str(disha_cfg.get('mode', 'bone')),
+        'load': str(disha_cfg.get('load_path', '')),
+        'r': int(disha_cfg.get('r', 0)),
+      }
+    else:
+      args.peft = 'none'
+
     return args  # Provide fully populated TrainingArgs structure to the caller
 
-  @staticmethod
-  def _validate_load(load_result: object) -> None:
-    missing = getattr(load_result, 'missing_keys', [])  # Extract missing keys from load_state_dict result for diagnostics
-    unexpected = getattr(load_result, 'unexpected_keys', [])  # Extract unexpected keys reported during state loading
-    tolerated_missing = [key for key in missing if key == 'head.weight']  # Ignore missing output head because encoder does not use logits
-    tolerated_unexpected = [key for key in unexpected if key == 'head.weight']  # Likewise ignore stray head weights in the checkpoint
-    critical_missing = [key for key in missing if key not in tolerated_missing]  # Collect genuinely missing parameters
-    critical_unexpected = [key for key in unexpected if key not in tolerated_unexpected]  # Collect genuinely unexpected parameters
-    if critical_missing or critical_unexpected:  # Raise when critical discrepancies remain after filtering tolerated keys
-      raise RuntimeError(f'RWKV-7 checkpoint mismatch: missing {critical_missing}, unexpected {critical_unexpected}')  # Abort initialization with descriptive error
+  def _validate_load(self, load_result: object) -> None:
+    missing = list(getattr(load_result, 'missing_keys', []))  # Extract missing keys from load_state_dict result for diagnostics
+    unexpected = list(getattr(load_result, 'unexpected_keys', []))  # Extract unexpected keys reported during state loading
+
+    def _is_tolerated(key: str) -> bool:
+      if key == 'head.weight':
+        return True
+      if getattr(self, 'peft_type', 'none') != 'none' and ('lora_' in key or 'disha' in key):
+        return True
+      if key.endswith(('.v0', '.v1', '.v2')) or '.att.v' in key:
+        return True
+      return False
+
+    critical_missing = [key for key in missing if not _is_tolerated(key)]
+    critical_unexpected = [key for key in unexpected if not _is_tolerated(key)]
+    if critical_missing or critical_unexpected:
+      raise RuntimeError(f'RWKV-7 checkpoint mismatch: missing {critical_missing}, unexpected {critical_unexpected}')
 
   @staticmethod
   def _prepare_mask(

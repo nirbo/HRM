@@ -93,6 +93,39 @@ This document summarizes upstream tooling around BlinkDL's RWKV architecture to 
 - Auto mode prioritizes wind chunked (SM80+ NVIDIA, bfloat16, ctx_len % 16 == 0), then wind longhead, then FLA; unsupported paths automatically fall back to the stock RWKV-PEFT kernel with a warning.
 - Manual overrides raise if prerequisites are not met so misconfigurations surface during init.
 - wind kernels come from the vendored `wind_rwkv` clone; FLA integration uses `flash-linear-attention`. Run `scripts/setup_rwkv_env.sh` to clone & install both repos into the venv.
+- The `peft` block under `model.encoder.encoder_cfg` controls adapter fine-tuning. Supported values:
+  - `type`: `none`, `lora`, `qlora` (alias for LoRA with NF4 quantization), `pissa` (PiSSA adapter; alias for RSLoRA), or `disha` (Dimension-Sharding adapters with `bone`/`bat` modes).
+  - `quantization`: `none`, `nf4`, `4bit`, `fp4`, `int8`, or `fp8` — when set, adapters are quantized (QLoRA-style) while base weights remain frozen.
+  - `train_parts`, `train_embeddings`, `train_head`, `train_layer_norms`: fine-grained toggles for which base parameters remain trainable alongside adapters.
+  - Type-specific sections (`lora`, `pissa`, `disha`) expose rank (`r`), scaling (`alpha`), dropout, optional load paths, and target parts (`att`/`ffn`). Defaults mirror RWKV-PEFT conventions.
+
+  Example snippet:
+
+  ```yaml
+  model:
+    encoder:
+      backend: rwkv7
+      n_layers: 24
+      max_seq_len: 4096
+      encoder_cfg:
+        checkpoint_path: models/blinkdl-rwkv7-g1a-1.5b/rwkv7-g1a-1.5b-20250922-ctx4096.pth
+        dim_att: 2048
+        head_size_a: 64
+        peft:
+          type: lora
+          quantization: nf4   # omit for standard LoRA
+          train_parts: ["time", "ln"]
+          train_embeddings: true
+          train_head: true
+          train_layer_norms: true
+          lora:
+            r: 16
+            alpha: 32
+            dropout: 0.01
+            load_path: ""
+  ```
+
+- RSLoRA requests should use `peft.type: pissa`; the RWKV-PEFT implementation maps PiSSA adapters onto the LoRA matrices and is compatible with RSLoRA-style workflows.
 
 ## Smoke Test Plan
 

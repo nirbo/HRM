@@ -202,3 +202,19 @@ python -m hrm_lm.training.train \
   - `gate μ` and its `[min,max]` window report how much decoder memory is coming from the HRM bridge; rising means the gate head is routing harder batches toward HRM while low mins show easy samples skipping it.
   - `halt Σ` is the batch-mean sum of per-cycle halting probabilities; keep it near the configured target (1.0 by default) and watch the spread to spot wasted cycles or premature exits.
   - The halting penalty is scaled by both `halting_weight` and the average gate strength, so raising the weight only has bite once the gate is open. For mixed 75/25 language↔reasoning corpora start around 0.05–0.10, monitor the logs, then step toward 0.15+ only if `halt Σ` consistently overshoots.
+
+## Appendix — RWKV7 + PEFT fine-tuning quickstart
+
+When switching the encoder backend to RWKV7 you can now fine-tune with LoRA/QLoRA/PiSSA/DiSHA adapters (via RWKV-PEFT) instead of updating the full 1.5B model. The sample config at `src/hrm_lm/configs/rwkv7_lora.yaml` freezes the base weights, attaches rank‑16 LoRA matrices, and optionally quantises them when you set `peft.quantization: nf4`.
+
+```bash
+PYTHONPATH=src python -m hrm_lm.training.train \
+  --config src/hrm_lm/configs/rwkv7_lora.yaml \
+  --dataset datasets/moe-stage-2-reasoning \
+  --run_name rwkv7-lora-stageC \
+  --steps 5000 \
+  --grad_accum_steps 4 \
+  --mixed_precision bf16
+```
+
+`peft.type` accepts `lora`, `qlora` (LoRA + NF4), `pissa` (PiSSA/RSLoRA), `disha` (`bone`/`bat` modes), or `none`. The trainer automatically freezes non-adapter weights, loads adapter checkpoints when provided, and disables `torch.compile` so RWKV kernels stay stable. No manual exports of `TORCH_CUDA_ARCH_LIST`/`MAX_JOBS` are required—the trainer seeds the necessary CUDA flags on startup.

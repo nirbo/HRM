@@ -1,7 +1,8 @@
-Integrate RWKV7 backend groundwork
+Integrate RWKV-PEFT adapters into RWKV7 backend.
 
-- add setup script that prepares venv and clones upstream RWKV repos
-- tweak gitignore so new backend files remain tracked
-- introduce RWKV7 encoder wrapper and wire backend selector into LMEncoder
-- extend optim_factory with RWKV7 layerwise parameter grouping
-- document integration notes and smoke-test plan in RWKV.md, log progress in llm.state
+- added PEFT config normalisation + adapter initialisation to rwkv7 backend
+- auto-disable torch.compile, enforce bf16 weights, freeze base params, load LoRA/PiSSA/DiSHA checkpoints
+- support quantised adapters (QLoRA) and trainer-side dtype handling
+- made LM encoder bypass embeddings for rwkv7 and cast outputs for HRM bridge
+- documented PEFT options in RWKV.md and added sample config configs/rwkv7_lora.yaml
+- validated dry-run training path with LoRA enabled

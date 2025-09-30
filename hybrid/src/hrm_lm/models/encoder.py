@@ -43,19 +43,20 @@ class LMEncoder(nn.Module):
         self.moe_aux_weight = 0.0  # Disable auxiliary loss when MoE is not active
       else:
         self.supports_cuda_graphs = False  # MoE routing uses data-dependent indexing that breaks CUDA graphs currently
-    self.norm = nn.LayerNorm(d_model)
+    self.norm = nn.Identity() if backend == 'rwkv7' else nn.LayerNorm(d_model)
 
   def forward(self, input_ids, attention_mask=None):
-    x = self.tok(input_ids)  # embed tokens
-    x = self.pos(x)  # inject positional encoding
     key_pad = (attention_mask == 0) if attention_mask is not None else None  # build padding mask when provided
-    if self.backend == 'mamba2':
-      h = self.enc(x, key_pad)  # Encode sequence with Mamba stack
-      aux_loss = None  # Mamba backend does not emit auxiliary losses
-    elif self.backend == 'rwkv7':
-      h, aux_loss = self.enc(x, key_pad)  # Encode sequence using RWKV-7 wrapper and capture placeholder aux loss
+    if self.backend == 'rwkv7':
+      h, aux_loss = self.enc(input_ids, key_pad)  # Encode sequence using RWKV-7 wrapper directly on token ids
     else:
-      h, aux_loss = self.enc(x, key_pad)  # Encode sequence and optional MoE auxiliary loss via transformer backend
+      x = self.tok(input_ids)  # embed tokens
+      x = self.pos(x)  # inject positional encoding
+      if self.backend == 'mamba2':
+        h = self.enc(x, key_pad)  # Encode sequence with Mamba stack
+        aux_loss = None  # Mamba backend does not emit auxiliary losses
+      else:
+        h, aux_loss = self.enc(x, key_pad)  # Encode sequence and optional MoE auxiliary loss via transformer backend
     h = self.norm(h)  # normalize encoder outputs for stability
     if key_pad is not None:  # honor padding mask when computing summary vector
       keep = (~key_pad).unsqueeze(-1).to(h.dtype)  # convert padding mask to multiplicative keep mask
@@ -64,4 +65,7 @@ class LMEncoder(nn.Module):
       cls = pooled  # assign pooled representation
     else:
       cls = h[:, 0]  # default to first token when no padding mask exists
+    if self.backend == 'rwkv7':  # Cast back to float32 for downstream modules expecting standard precision
+      h = h.to(dtype=torch.float32)
+      cls = cls.to(dtype=torch.float32)
     return h, cls, aux_loss  # expose full sequence states, CLS, and optional aux loss

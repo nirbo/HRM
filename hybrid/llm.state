@@ -1894,3 +1894,35 @@
 ### Open Issues
 - None related to CUDA env automation; proceed with kernel smoke tests and training runs.
 
+
+## Session 2025-09-30T20:00Z
+### Original Task Description
+- Integrate RWKV-PEFT adapter support (LoRA/QLoRA/RSLoRA/etc.) into our RWKV7 pipeline so trainer can fine-tune with configurable ranks instead of full-parameter updates.
+
+### Plan
+1. Study RWKV-PEFT repository to understand available PEFT modes (LoRA, QLoRA, RSLoRA, DiSHA, PiSSA) and how they are enabled/configured.
+2. Design configuration schema & trainer wiring to toggle PEFT, map user-provided hyperparameters (rank, alpha, target modules, quantization, etc.), and manage checkpoint save/load.
+3. Implement RWKV7 encoder changes to initialize PEFT adapters, freeze base weights when requested, ensure parameter filtering, and expose trainable parameter sets to optimizer factory.
+4. Extend trainer/config/docs to surface new knobs, adjust optimizer creation (e.g., separate LR for adapters), and verify via smoke tests (init, forward/backward) with LoRA & QLoRA.
+5. Update statefile/docs, commit, and push after validating functionality.
+
+### Action Log
+- 2025-09-30T20:00Z: Logged new session and integration plan into statefile.
+
+### Pending Steps
+- Execute plan steps 1-5 above.
+
+### Current Summary
+- Session initialized; PEFT integration tasks queued.
+
+### Open Issues
+- Need to confirm which PEFT modes RWKV-PEFT exposes and required dependencies.
+
+- 2025-09-30T20:03Z: Reviewed RWKV-PEFT repo to identify LoRA/PiSSA/DiSHA hooks (LORA_CONFIG, DiSHA_CONFIG) and load_peft_model behaviour.
+- 2025-09-30T20:03Z: Drafted PEFT configuration schema: {type, train_settings (train_parts, embeddings/head/LN toggles), quantization, and per-type blocks (lora/pissa/disha) with rank/alpha/dropout/load paths}.
+- 2025-09-30T20:11Z: Added PEFT plumbing in RWKV7 encoder (config normalisation, globals setup, parameter freezing, quantisation, adapter loading).
+- 2025-09-30T20:14Z: Smoke-tested RWKV7Encoder with LoRA and QLoRA configs (trainable params reduced; quant mode active).
+- 2025-09-30T20:23Z: Completed trainer dry_run with LoRA config (loss=11.2966) confirming forward/backward path executes.
+- 2025-09-30T20:24Z: Documented PEFT configuration in RWKV.md and added sample config (configs/rwkv7_lora.yaml) demonstrating LoRA/QLoRA knobs.
+- 2025-09-30T20:25Z: Committed and pushed RWKV7 PEFT integration (Add RWKV7 PEFT adapter support).
+- 2025-09-30T20:43Z: Updated TRAINING.md and REASON-TRAINING.md with RWKV7 PEFT instructions and sample command.

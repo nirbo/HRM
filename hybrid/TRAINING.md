@@ -59,6 +59,61 @@ PYTHONPATH=src python -m hrm_lm.training.train \
 * `--grad_accum_steps` overrides `train.grad_accum_steps`; when >1 the trainer divides each micro-batch loss by the accumulation factor, accumulates gradients across micro-batches, and only clips/updates/schedules on effective optimizer steps.
 * Checkpoints store the resolved names/kwargs and restore the scheduler state on resume. If an older checkpoint lacks scheduler metadata the trainer prints a warning and restarts the schedule from step 0.
 
+### RWKV7 backend & PEFT adapters
+
+The RWKV7 encoder path now understands parameter-efficient adapters from the official [RWKV-PEFT](https://github.com/JL-er/RWKV-PEFT) toolkit. The `peft` block inside `model.encoder.encoder_cfg` controls the adapter type, ranks, and optional quantization:
+
+```yaml
+model:
+  encoder:
+    backend: rwkv7
+    n_layers: 24
+    max_seq_len: 4096
+    checkpoint_path: models/blinkdl-rwkv7-g1a-1.5b/rwkv7-g1a-1.5b-20250922-ctx4096.pth
+    dim_att: 2048
+    head_size_a: 64
+    peft:
+      type: lora        # none | lora | qlora | pissa | disha
+      quantization: nf4 # none | nf4 | 4bit | fp4 | int8 | fp8
+      freeze_non_peft: true
+      train_embeddings: true
+      train_head: true
+      train_layer_norms: true
+      train_parts: ["time", "ln"]
+      lora:
+        r: 16
+        alpha: 32
+        dropout: 0.01
+        load_path: ""
+      pissa:
+        r: 16
+        svd_niter: 4
+        load_path: ""
+        init_path: ""
+      disha:
+        mode: bone
+        r: 64
+        load_path: ""
+```
+
+Key points:
+- `type` selects the adapter family. `qlora` is an alias for LoRA with NF4 quantisation, and `pissa` covers the PiSSA/RSLoRA workflow.
+- `quantization` requests NF4/INT8/FP8 adapters while the frozen base weights stay in BF16. Leave as `none` for standard LoRA.
+- `train_embeddings`, `train_head`, `train_layer_norms`, and `train_parts` (e.g. `time`, `ln`) let you keep specific base parameters trainable alongside the adapters.
+- Each sub-block (`lora`, `pissa`, `disha`) exposes rank, scale (`alpha`), dropout, and optional load paths for resume/merging.
+- The trainer automatically freezes the remaining RWKV weights, loads adapter checkpoints when present, and disables `torch.compile` so the custom CUDA kernels run without asserting on dtypes.
+
+A ready-to-run example lives at `src/hrm_lm/configs/rwkv7_lora.yaml`. Launch it with:
+
+```bash
+PYTHONPATH=src python -m hrm_lm.training.train \
+  --config src/hrm_lm/configs/rwkv7_lora.yaml \
+  --dataset datasets/moe-stage-2-reasoning \
+  --dry_run
+```
+
+No extra environment exports are needed—`TORCH_CUDA_ARCH_LIST`, `MAX_JOBS`, and the necessary RWKV flags are seeded automatically when the backend is `rwkv7`.
+
 ## Dataset Preparation
 
 To convert parquet dumps (like the FineWeb derivative) into HRM-LM-ready token triplets, run:
@@ -397,4 +452,3 @@ The tables below enumerate every optimizer, learning-rate scheduler, and loss fu
 | binarybitemperedlogisticloss | focaltverskyloss | tverskyloss |
 | bitemperedlogisticloss | jaccardloss |  |
 | diceloss | ldamloss |  |
-
