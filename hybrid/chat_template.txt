@@ -1,0 +1,170 @@
+# RWKV Universal Chat Template
+
+This template defines a single, text-only transcript format that can be losslessly
+converted to and from the three major agent APIs in use today:
+
+1. **OpenAI Chat Completions** (`/v1/chat/completions`).
+2. **OpenAI Responses API** (`/v1/responses`).
+3. **Anthropic Messages API** (`/v1/messages`).
+
+Goals:
+- Human-readable, tokenizer-friendly surface form.
+- Preserve role boundaries (`system`, `user`, `assistant`, `tool`/`function`).
+- Support legacy prompt-completion workflows.
+- Support tool/function calls and tool results.
+
+-------------------------------------------------------------------------------
+## Canonical transcript syntax
+-------------------------------------------------------------------------------
+
+Each conversation is serialized as a sequence of *blocks*. A block begins with a
+role tag, is followed by the payload, and ends with a matching end tag. Blocks
+are separated by a single blank line.
+
+```
+<<SYS>>
+System instructions go here.
+<<SYS_END>>
+
+<<USER>>
+User message goes here.
+<<USER_END>>
+
+<<ASSISTANT>>
+Assistant reply goes here.
+<<ASSISTANT_END>>
+```
+
+### Assistant tool calls
+
+When the assistant calls a tool, emit a `<<TOOL_CALL …>>` block followed by the
+corresponding `<<TOOL_RESULT …>>` block.
+
+```
+<<ASSISTANT>>
+I will call the calculator tool.
+<<ASSISTANT_END>>
+
+<<TOOL_CALL name="calculator" id="call_001">>
+{"operation": "add", "operands": [2, 3]}
+<<END_TOOL_CALL>>
+
+<<TOOL_RESULT name="calculator" id="call_001" status="ok">>
+{"result": 5}
+<<END_TOOL_RESULT>>
+
+<<ASSISTANT>>
+The result is 5.
+<<ASSISTANT_END>>
+```
+
+### Streaming / unfinished completions
+
+During streaming, omit the closing `<<ASSISTANT_END>>` tag until generation is
+complete.
+
+-------------------------------------------------------------------------------
+## Mapping to major APIs
+-------------------------------------------------------------------------------
+
+### 1. OpenAI Chat Completions
+
+| Template block                     | Chat message role / field                                             |
+|------------------------------------|------------------------------------------------------------------------|
+| `<<SYS>> … <<SYS_END>>`            | `system` message                                                       |
+| `<<USER>> … <<USER_END>>`          | `user` message                                                         |
+| `<<ASSISTANT>> … <<ASSISTANT_END>>`| `assistant` message                                                    |
+| `<<TOOL_CALL …>>`                  | `assistant` message with `function_call` payload (`name`, `arguments`) |
+| `<<TOOL_RESULT …>>`                | `tool` role (`tool_call_id` + JSON result)                             |
+
+### 2. OpenAI Responses API
+
+Map each block to an `input` item:
+
+| Template block                     | Responses API entry example |
+|------------------------------------|------------------------------|
+| `<<SYS>>`                          | `{ "role": "system", "content": [{"type": "input_text", "text": …}] }` |
+| `<<USER>>`                         | `{ "role": "user", "content": [{"type": "input_text", "text": …}] }` |
+| `<<ASSISTANT>>`                    | `{ "role": "assistant", "content": [{"type": "output_text", "text": …}] }` |
+| `<<TOOL_CALL …>>`                  | `{ "role": "assistant", "content": [{"type": "tool_call", "id": …, "name": …, "arguments": …}] }` |
+| `<<TOOL_RESULT …>>`                | `{ "role": "user", "content": [{"type": "tool_result", "tool_call_id": …, "output": …}] }` |
+
+### 3. Anthropic Messages API
+
+| Template block                     | Messages API mapping |
+|------------------------------------|-----------------------|
+| `<<SYS>>`                          | `system` string (concatenate multiple blocks with blank lines) |
+| `<<USER>>`                         | `{ "role": "user", "content": [{"type": "text", "text": …}] }` |
+| `<<ASSISTANT>>`                    | `{ "role": "assistant", "content": [{"type": "text", "text": …}] }` |
+| `<<TOOL_CALL …>>`                  | `{ "role": "assistant", "content": [{"type": "tool_use", "id": …, "name": …, "input": …}] }` |
+| `<<TOOL_RESULT …>>`                | `{ "role": "user", "content": [{"type": "tool_result", "tool_use_id": …, "content": …}] }` |
+
+-------------------------------------------------------------------------------
+## Tool / function conventions
+-------------------------------------------------------------------------------
+
+- `name="…"` is required on `<<TOOL_CALL …>>` blocks.
+- `id="…"` is optional but recommended (for correlating calls/results).
+- Payloads must be JSON objects (no comments, double quotes).
+- `status="…"` on `<<TOOL_RESULT …>>` is advisory only.
+
+-------------------------------------------------------------------------------
+## Prompt engineering guidance
+-------------------------------------------------------------------------------
+
+- Legacy completions: wrap the prompt in one `<<USER>>` block (optionally preceded
+  by `<<SYS>>`). The generated text becomes an `<<ASSISTANT>>` block.
+- Tool usage: train on the sequence user → assistant (ack) → tool call → tool
+  result → assistant final answer.
+- Safety: place guardrails or persona statements inside `<<SYS>>` blocks.
+
+-------------------------------------------------------------------------------
+## Example transcript
+-------------------------------------------------------------------------------
+
+```
+<<SYS>>
+You are a coding assistant. Prefer step-by-step reasoning.
+<<SYS_END>>
+
+<<USER>>
+Write a Python function that returns the factorial of n and show an example call.
+<<USER_END>>
+
+<<ASSISTANT>>
+I'll draft the function and then test it.
+<<ASSISTANT_END>>
+
+<<ASSISTANT>>
+Here is the implementation:
+
+```python
+def factorial(n):
+    if n < 0:
+        raise ValueError("n must be non-negative")
+    result = 1
+    for i in range(2, n + 1):
+        result *= i
+    return result
+
+print(factorial(5))  # 120
+```
+<<ASSISTANT_END>>
+```
+
+-------------------------------------------------------------------------------
+## Implementation checklist
+-------------------------------------------------------------------------------
+
+- Add the literal tags (`<<SYS>>`, `<<USER>>`, `<<ASSISTANT>>`, `<<TOOL_CALL…>>`,
+  etc.) to the tokenizer special token list.
+- Update dataset preprocessing to emit the tags for every conversation.
+- During inference, wrap API payloads into this template before sending them to
+  the model, and parse generated text back into the target API format.
+- For streaming, emit partial assistant content until the closing tag appears.
+- Validate tool call JSON before executing external tools.
+
+This template keeps RWKV-7’s text-only interface while remaining compatible with
+OpenAI Chat Completions, the new Responses API, and Anthropic Messages—enabling
+agentic coding workflows that include tool calls, function calls, and standard
+chat exchanges.

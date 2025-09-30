@@ -5,7 +5,7 @@ model:
   encoder:
     backend: rwkv7
     n_layers: 24
-    max_seq_len: 4096
+    max_seq_len: 1024
     checkpoint_path: models/blinkdl-rwkv7-g1a-1.5b/rwkv7-g1a-1.5b-20250922-ctx4096.pth
     dim_att: 2048
     dim_ffn: 7168
@@ -41,10 +41,10 @@ model:
     d_model: 2048
     h_len: 8
     l_len: 64
-    h_layers: 2
-    l_layers: 2
-    h_cycles: 4
-    l_steps: 8
+    h_layers: 8
+    l_layers: 8
+    h_cycles: 12
+    l_steps: 12
     approx_grad: one_step
     use_halting: true
     halting_weight: 0.05
@@ -68,9 +68,14 @@ loss:
   kwargs: {}
 train:
   lr_scheduler:
-    name: cosine
-    kwargs: {}
-  seed: 888
+    name: warmup_stable_decay
+    kwargs:
+      num_warmup_steps: 2000
+      num_stable_steps: 152800   # adjust downward if you trim total steps
+      num_decay_steps: 50925
+      cooldown_type: '1-sqrt'    # default; cosine also works if you prefer smoother tail
+      min_lr_ratio: 0.02         # floor for the tail (tweak as needed)
+  seed: 42
   batch_size: 2
   eval_batch_size: 2
   grad_accum_steps: 4

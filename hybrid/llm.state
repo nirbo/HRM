@@ -1926,3 +1926,14 @@
 - 2025-09-30T20:24Z: Documented PEFT configuration in RWKV.md and added sample config (configs/rwkv7_lora.yaml) demonstrating LoRA/QLoRA knobs.
 - 2025-09-30T20:25Z: Committed and pushed RWKV7 PEFT integration (Add RWKV7 PEFT adapter support).
 - 2025-09-30T20:43Z: Updated TRAINING.md and REASON-TRAINING.md with RWKV7 PEFT instructions and sample command.
+
+2025-09-30T23:15Z: Initiated dataset tokenizer fix plan (steps: inspect tokenizer assets, convert to JSON, rerun prep).
+2025-09-30T23:17Z: Confirmed tokenizer_rwkv7_vocab.txt is raw vocab text; HF-compatible tokenizer.json already present (131072 tokens). Need to convert or reference JSON for data prep.
+2025-09-30T23:20Z: Copied tokenizer.json -> tokenizer_rwkv7.json for clarity; ready to reuse HF tokenizer for GSM8K prep.
+2025-09-30T23:24Z: User reports local tokenizer.json mismatches RWKV7 official tokenizer; updating plan to locate authentic vocab before dataset prep.
+2025-09-30T23:28Z: Advised user on implications of training a new tokenizer versus using checkpoint-compatible vocab.
+2025-09-30T23:32Z: Converted tokenizer_rwkv7_vocab.txt to custom JSON format tokenizer_rwkv7_vocab.json containing 65529 entries.
+2025-09-30T23:34Z: Planning tokenizer loader integration so dataset prep can read RWKV7 vocab JSON.
+2025-09-30T23:37Z: Added RWKVTokenizer module and updated dataset prep script to load rwkv_vocab JSON with special-token fallbacks.
+2025-09-30T23:40Z: Patched chat_template.py regex and syntax so module imports successfully for dataset prep.
+2025-09-30T23:45Z: Regenerated GSM8K (socratic) triples with RWKV7 tokenizer JSON (train=8442, val=184, test=166).

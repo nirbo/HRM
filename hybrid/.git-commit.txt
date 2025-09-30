@@ -1,8 +1,11 @@
-Integrate RWKV-PEFT adapters into RWKV7 backend.
+Title: Integrate RWKV7 tokenizer support and refresh dataset tooling
 
-- added PEFT config normalisation + adapter initialisation to rwkv7 backend
-- auto-disable torch.compile, enforce bf16 weights, freeze base params, load LoRA/PiSSA/DiSHA checkpoints
-- support quantised adapters (QLoRA) and trainer-side dtype handling
-- made LM encoder bypass embeddings for rwkv7 and cast outputs for HRM bridge
-- documented PEFT options in RWKV.md and added sample config configs/rwkv7_lora.yaml
-- validated dry-run training path with LoRA enabled
+Summary:
+- add universal chat template artifacts and fix parser utilities required for dataset templating.
+- implement native RWKV tokenizer loader and fallbacks inside prepare_dataset script with sys.path fix.
+- convert official rwkv7 vocab to JSON format and regenerate gsm8k socratic triples with 65k vocab.
+- keep rwkv7 lora config aligned with 65536-token setup per latest guidance.
+
+Testing:
+- PYTHONPATH=src ./venv/bin/python -m compileall chat_template.py scripts/prepare_dataset.py src/hrm_lm/tokenizers/rwkv.py
+- PYTHONPATH=src ./venv/bin/python scripts/prepare_dataset.py --source datasets/openai-gsm8k/socratic --output-dir datasets/openai-gsm8k-socratic --fields question answer --to-triples --tokenizer tokenizer_rwkv7_vocab.json --max-seq-len 1024 --val-ratio 0.02 --test-ratio 0.02 --tokenizer-num-threads 30 --tokenizer-batch-size 16384 --count-records --force-extract --force-triples

@@ -42,8 +42,19 @@ import random
 import shutil
 import tempfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import sys
 from pathlib import Path
 from typing import Dict, Iterable, Iterator, List, Optional, Tuple
+
+# -- RWKV universal chat template utilities ---------------------------------
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+try:
+    from chat_template import render_template, template_to_payload  # noqa: F401
+except Exception:
+    render_template = None  # type: ignore
 
 import pyarrow.parquet as pq
 import zstandard as zstd
@@ -65,11 +76,50 @@ SUPPORTED_PATTERNS = [
 
 _TOKENIZER_CACHE = None
 
+try:
+    from hrm_lm.tokenizers import RWKVTokenizer
+except Exception:  # pragma: no cover - optional dependency during bootstrap
+    RWKVTokenizer = None  # type: ignore
+
+PROMPT_CANDIDATES = [
+    "prompt",
+    "question",
+    "input",
+    "query",
+    "instruction",
+    "text",
+]
+
+RESPONSE_CANDIDATES = [
+    "response",
+    "answer",
+    "output",
+    "completion",
+    "result",
+]
+
+SYSTEM_CANDIDATES = [
+    "system",
+    "system_prompt",
+    "persona",
+]
+
 
 def _load_tokenizer(tokenizer_path: str):
     global _TOKENIZER_CACHE
     if _TOKENIZER_CACHE is None:
-        _TOKENIZER_CACHE = Tokenizer.from_file(tokenizer_path)
+        try:
+            _TOKENIZER_CACHE = Tokenizer.from_file(tokenizer_path)
+        except Exception:
+            if RWKVTokenizer is None:
+                raise
+            with open(tokenizer_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            vocab_type = payload.get("type") if isinstance(payload, dict) else None
+            if vocab_type and str(vocab_type).startswith("rwkv_vocab"):
+                _TOKENIZER_CACHE = RWKVTokenizer.from_json(tokenizer_path)  # type: ignore[assignment]
+            else:
+                raise
     return _TOKENIZER_CACHE
 
 
@@ -83,6 +133,9 @@ def _encode_chunk_worker(args: Tuple[int, List[Tuple[str, str]], str, int, int, 
     eos_id = tokenizer.token_to_id('<eos>') or tokenizer.token_to_id('</s>')
     if bos_id is None or eos_id is None:
         raise RuntimeError('Tokenizer must contain <bos>/<eos> tokens when converting to triples.')
+    if max_tokens <= 2:
+        raise RuntimeError('max_seq_len must be greater than 2 to accommodate <bos>/<eos>.')
+    max_ids_len = max_tokens - 2
 
     temp_dir_path = Path(temp_dir)
     temp_paths = {
@@ -99,7 +152,9 @@ def _encode_chunk_worker(args: Tuple[int, List[Tuple[str, str]], str, int, int, 
             texts = [text for (_, text) in batch]
             encodings = tokenizer.encode_batch(texts)
             for (split, _), encoding in zip(batch, encodings):
-                ids = encoding.ids[:max_tokens]
+                ids = encoding.ids
+                if len(ids) > max_ids_len:
+                    continue  # skip samples that would require truncation
                 seq = [bos_id] + ids + [eos_id]
                 triple = {
                     'encoder_ids': seq[:-1],
@@ -125,13 +180,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fields", nargs="+", required=True,
                         help="Fields to keep in the cleaned JSONL")
     parser.add_argument("--template", default=None,
-                        help="Optional Python format string to build an additional field using source keys")
+                        help="Optional Python format string to build an additional field using source keys (ignored when chat template is active)")
     parser.add_argument("--template-field", default="text",
-                        help="Name of the field populated by --template (default: text)")
+                        help="Name of the field populated by the template (default: text)")
+    parser.add_argument("--no-chat-template", action="store_false", dest="use_chat_template",
+                        help="Disable canonical RWKV chat template wrapping (enabled by default)")
     parser.add_argument("--batch-size", type=int, default=8192,
                         help="Batch size used when encoding to triples (default: 8192)")
     parser.add_argument("--no-progress", action="store_true",
                         help="Disable tqdm progress bars")
+    parser.set_defaults(use_chat_template=True)
     parser.add_argument("--count-records", action="store_true",
                         help="Pre-count records to display total progress (requires a full pre-pass)")
     parser.add_argument("--force-extract", action="store_true",
@@ -225,13 +283,40 @@ def iter_records(path: Path) -> Iterator[Dict[str, object]]:
 # ----------------------------------------------------------------------------
 
 
-def build_clean_record(record: Dict[str, object], keep_fields: List[str], template: Optional[str], template_field: str) -> Optional[Dict[str, object]]:
+def _select_field(record: Dict[str, object], keys: Iterable[str]) -> str:
+    for key in keys:
+        value = record.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
+def build_clean_record(record: Dict[str, object], keep_fields: List[str], template: Optional[str], template_field: str, use_chat_template: bool) -> Optional[Dict[str, object]]:
     cleaned: Dict[str, object] = {}
     for field in keep_fields:
         value = record.get(field)
         if value is not None:
             cleaned[field] = value
-    if template:
+    if use_chat_template:
+        if render_template is None:
+            raise RuntimeError("chat_template module is required but not available")
+        system_text = _select_field(record, SYSTEM_CANDIDATES)
+        prompt_text = _select_field(record, PROMPT_CANDIDATES)
+        response_text = _select_field(record, RESPONSE_CANDIDATES)
+        if not prompt_text:
+            # Fall back to the template field (if already populated) or the first kept field
+            prompt_text = str(cleaned.get(template_field) or next(iter(cleaned.values()), ""))
+        conv = {
+            "messages": []
+        }
+        if system_text:
+            conv["messages"].append({"role": "system", "content": system_text})
+        conv["messages"].append({"role": "user", "content": prompt_text})
+        if response_text:
+            conv["messages"].append({"role": "assistant", "content": response_text})
+        rendered = render_template(conv, api="openai-chat")
+        cleaned[template_field] = rendered
+    elif template:
         try:
             rendered = template.format(**record)
         except KeyError:
@@ -248,7 +333,7 @@ def count_records(files: List[Path]) -> int:
     return total
 
 
-def write_clean_jsonl(source: Path, files: List[Path], keep_fields: List[str], template: Optional[str], template_field: str, output_dir: Path, show_progress: bool, count_total: bool) -> Path:
+def write_clean_jsonl(source: Path, files: List[Path], keep_fields: List[str], template: Optional[str], template_field: str, use_chat_template: bool, output_dir: Path, show_progress: bool, count_total: bool) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / 'extracted.jsonl'
     count = 0
@@ -270,7 +355,7 @@ def write_clean_jsonl(source: Path, files: List[Path], keep_fields: List[str], t
     with output_path.open('w', encoding='utf-8') as out:
         for file_path in files:
             for record in iter_records(file_path):
-                cleaned = build_clean_record(record, keep_fields, template, template_field)
+                cleaned = build_clean_record(record, keep_fields, template, template_field, use_chat_template)
                 if cleaned is None:
                     continue
                 out.write(json.dumps(cleaned, ensure_ascii=False) + '\n')
@@ -286,13 +371,13 @@ def write_clean_jsonl(source: Path, files: List[Path], keep_fields: List[str], t
 # ----------------------------------------------------------------------------
 
 
-def ensure_tokenizer(args: argparse.Namespace, dataset_path: Path) -> Tokenizer:
+def ensure_tokenizer(args: argparse.Namespace, dataset_path: Path):
     tokenizer_path = Path(args.tokenizer)
     tokenizer_path.parent.mkdir(parents=True, exist_ok=True)
 
     if tokenizer_path.exists():
         print(f"[INFO] Loading tokenizer from {tokenizer_path}")
-        tokenizer = Tokenizer.from_file(str(tokenizer_path))
+        tokenizer = _load_tokenizer(str(tokenizer_path))
     else:
         print(f"[INFO] Training new tokenizer at {tokenizer_path}")
         tokenizer = Tokenizer(BPE(unk_token='<unk>'))
@@ -342,11 +427,29 @@ def convert_to_triples(clean_path: Path, output_dir: Path, args: argparse.Namesp
         os.environ['RAYON_NUM_THREADS'] = str(args.tokenizer_num_threads)
         os.environ['TOKENIZERS_PARALLELISM'] = 'true'
 
-    pad_id = tokenizer.token_to_id('<pad>')
-    bos_id = tokenizer.token_to_id('<bos>')
-    eos_id = tokenizer.token_to_id('<eos>')
-    if pad_id is None or bos_id is None or eos_id is None:
-        raise SystemExit('Tokenizer must include <pad>, <bos>, and <eos> tokens')
+    pad_id = tokenizer.token_to_id('<pad>') if hasattr(tokenizer, 'token_to_id') else None
+    if pad_id is None and hasattr(tokenizer, 'token_to_id'):
+        pad_id = tokenizer.token_to_id('[PAD]')
+    if pad_id is None and hasattr(tokenizer, 'pad_token_id'):
+        pad_id = getattr(tokenizer, 'pad_token_id')
+    if pad_id is None:
+        pad_id = 0
+
+    bos_id = tokenizer.token_to_id('<bos>') if hasattr(tokenizer, 'token_to_id') else None
+    if bos_id is None and hasattr(tokenizer, 'token_to_id'):
+        bos_id = tokenizer.token_to_id('<s>')
+    if bos_id is None and hasattr(tokenizer, 'bos_token_id'):
+        bos_id = getattr(tokenizer, 'bos_token_id')
+    if bos_id is None:
+        bos_id = 0
+
+    eos_id = tokenizer.token_to_id('<eos>') if hasattr(tokenizer, 'token_to_id') else None
+    if eos_id is None and hasattr(tokenizer, 'token_to_id'):
+        eos_id = tokenizer.token_to_id('</s>')
+    if eos_id is None and hasattr(tokenizer, 'eos_token_id'):
+        eos_id = getattr(tokenizer, 'eos_token_id')
+    if eos_id is None:
+        eos_id = 0
 
     max_tokens = max(1, args.max_seq_len - 2)
     splits = {
@@ -536,12 +639,15 @@ def main() -> None:
             args.fields,
             args.template,
             args.template_field,
+            args.use_chat_template,
             output_dir,
             show_progress,
             args.count_records,
         )
 
     if args.to_triples:
+        if not args.text_field:
+            args.text_field = args.template_field
         triple_outputs = [
             output_dir / 'train.jsonl',
             output_dir / 'val.jsonl',
