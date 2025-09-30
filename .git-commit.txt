@@ -1,5 +1,7 @@
-Reconcile HRM gating safeguards with upstream NaN handling
+Title: Update statefile after branch snapshot push
 
-- Sanitized the HRM bridge by clamping gate scales, zeroing non-finite logits/memory tensors, and guarding the halting penalty so upstream safeguards and warmup gating no longer conflict.
-- Extended the optional Mamba2 stack and transformer fallback to apply `torch.nan_to_num` after every recurrent update and residual merge, mirroring the newly merged runtime protections.
-- Logged the conflict-resolution workflow in `hybrid/llm.state` so future sessions can trace the stabilization steps and pending verification tasks.
+Summary:
+- Logged push of feature/pytorch-optimizer-integration branch for traceability.
+
+Testing:
+- Not applicable (statefile note only).
