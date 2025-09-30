@@ -36,6 +36,7 @@ class HRMLanguageModel(nn.Module):
       backend=enc_backend,
       encoder_cfg=encoder_cfg,
     )
+    self.detach_encoder = bool(encoder_cfg.get('detach_output', False)) if encoder_cfg else False
     decoder_cfg = decoder_cfg or {}
     self.prompt2hrm = PromptToHRMBridge(d_model)
     use_halting = hrm_cfg.get("use_halting", False)
@@ -100,6 +101,9 @@ class HRMLanguageModel(nn.Module):
     labels=None,
   ):
     enc_h, cls, enc_aux = self.encoder(input_ids, enc_attn_mask)
+    if self.detach_encoder:
+      enc_h = enc_h.detach()
+      cls = cls.detach()
     x = self.prompt2hrm(cls)
     need_aux = self.halting_weight > 0 or self.deep_supervision
     z, aux = self.hrm(x, return_all=need_aux)

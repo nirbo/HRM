@@ -13,8 +13,9 @@ model:
     head_size_divisor: 8
     kernel_preference: wind_longhead
     grad_checkpoint: false
+    detach_output: true
     peft:
-      type: lora         # options: none | lora | qlora | pissa | disha
+      type: none         # options: none | lora | qlora | pissa | disha
       quantization: none # set to nf4/int8/fp8/etc for QLoRA-style training
       freeze_non_peft: true
       train_embeddings: false
@@ -56,11 +57,11 @@ model:
     ds_weight: 0.2
     gate_scale: 1.0
     gate_bias: 0.0
-    trainable: false
+    trainable: true
 bridge:
   type: prefix
   prefix_len: 16
-  trainable: false
+  trainable: true
 optim:
   name: adamw
   lr: 1.5e-4
