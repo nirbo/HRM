@@ -1946,3 +1946,6 @@
 2025-10-01T00:25Z: Patched RWKV att module reference via _patch_att_kernel so kernel overrides propagate to imported alias.
 2025-10-01T00:31Z: Recalculated RWKV7 scheduler for batch=8 accum=4 (warmup/stable/decay 31/127/62) and updated config batch sizing.
 2025-10-01T00:36Z: Updated RWKV7 schedule for new dataset (train=7899) -> warmup/stable/decay 31/158/78.
+2025-10-01T00:38Z: Switched RWKV encoder/decoder max_seq_len to 512 and forced kernel_preference=wind_longhead to cut chunked kernel memory.
+2025-10-01T00:41Z: Added TORCH_COMPILE_DISABLE and PYTORCH_COMPILE_DISABLE env guards to avoid torch.compile capturing huge graphs.
+2025-10-01T00:44Z: Added temporary CUDA memory debug prints around forward pass to inspect allocation spike.

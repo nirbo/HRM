@@ -616,6 +616,8 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
     os.environ.setdefault('RWKV_FLOAT_MODE', str(cfg.get('float_mode', 'bf16')))  # Match precision hints expected by RWKV kernels
     os.environ.setdefault('TORCHDYNAMO_DISABLE', '1')  # Disable torch.compile for RWKV kernels to avoid dtype/assert issues
     os.environ.setdefault('DISABLE_TORCH_COMPILE', '1')  # Mirror disable flag recognized by some runtimes
+    os.environ.setdefault('TORCH_COMPILE_DISABLE', '1')  # Explicitly disable torch.compile decorators when possible
+    os.environ.setdefault('PYTORCH_COMPILE_DISABLE', '1')  # PyTorch 2.4+ flag to bypass torch.compile graph capture
 
   @staticmethod
   def _build_args(

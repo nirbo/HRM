@@ -5,13 +5,13 @@ model:
   encoder:
     backend: rwkv7
     n_layers: 24
-    max_seq_len: 1024
+    max_seq_len: 512
     checkpoint_path: models/blinkdl-rwkv7-g1a-1.5b/rwkv7-g1a-1.5b-20250922-ctx4096.pth
     dim_att: 2048
     dim_ffn: 7168
     head_size_a: 64
     head_size_divisor: 8
-    kernel_preference: auto
+    kernel_preference: wind_longhead
     peft:
       type: lora         # options: none | lora | qlora | pissa | disha
       quantization: none # set to nf4/int8/fp8/etc for QLoRA-style training
@@ -36,7 +36,7 @@ model:
         load_path: ""
   decoder:
     n_layers: 8
-    max_seq_len: 1024
+    max_seq_len: 512
   hrm:
     d_model: 2048
     h_len: 8
