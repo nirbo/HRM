@@ -111,6 +111,15 @@ finally:
 
 class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 through a Transformer-like interface
   @staticmethod
+  def _patch_att_kernel(func: Callable[..., torch.Tensor]) -> None:
+    try:
+      import importlib
+      att_mod = importlib.import_module('rwkvt.rwkv7.att')
+    except Exception:
+      return
+    setattr(att_mod, 'RUN_CUDA_RWKV7g', func)
+
+  @staticmethod
   def _to_plain_dict(value: Optional[Any]) -> Dict[str, Any]:  # Normalise nested config mappings without requiring OmegaConf globally
     if value is None:
       return {}
@@ -394,6 +403,7 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
     self._validate_load(load_result)  # Emit warnings when unexpected parameters are skipped or missing
     self.model.to(dtype=torch.bfloat16)  # Ensure base weights reside in bfloat16 to satisfy RWKV kernel expectations
     self._apply_peft(args, self.peft_config)  # Freeze / unfreeze parameters and load adapter checkpoints as necessary
+    self.model.to(dtype=torch.bfloat16)  # Recast adapters / quantized parts to maintain kernel dtype contract
     self.supports_cuda_graphs = False  # RWKV recurrence uses Triton/CUDA kernels that are not capture safe
 
   def _select_backend(self, args: TrainingArgs, cfg: dict) -> str:  # Decide which RWKV kernel implementation to activate
@@ -492,6 +502,12 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
     head_size = args.head_size_a  # Cache head size locally for closure capture
 
     def run_chunked(r: torch.Tensor, w: torch.Tensor, k: torch.Tensor, v: torch.Tensor, a: torch.Tensor, b: torch.Tensor, HEAD_SIZE: int = head_size) -> torch.Tensor:  # Define runtime bridge into wind kernel
+      r = r.to(torch.bfloat16)
+      w = w.to(torch.bfloat16)
+      k = k.to(torch.bfloat16)
+      v = v.to(torch.bfloat16)
+      a = a.to(torch.bfloat16)
+      b = b.to(torch.bfloat16)
       B, T, HC = w.shape  # Unpack tensor dimensions
       if HC % HEAD_SIZE != 0:  # Validate divisibility between hidden channels and head size
         raise RuntimeError('hidden size is not divisible by RWKV head size for chunked kernel')  # Abort with descriptive error
@@ -501,6 +517,7 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
       return outputs.view(B, T, HC)  # Restore original flattened layout
 
     rwkvop.RUN_CUDA_RWKV7g = run_chunked  # Patch RWKV operator to use wind chunked kernel
+    self._patch_att_kernel(run_chunked)
 
   def _activate_wind_longhead(self, args: TrainingArgs, cfg: dict, device_info: Dict[str, object]) -> None:  # Enable wind longhead kernel for broad hardware
     if not device_info.get('is_cuda', False):  # Ensure a CUDA/HIP device is present
@@ -517,6 +534,12 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
     head_size = args.head_size_a  # Capture head size for closure
 
     def run_longhead(r: torch.Tensor, w: torch.Tensor, k: torch.Tensor, v: torch.Tensor, a: torch.Tensor, b: torch.Tensor, HEAD_SIZE: int = head_size) -> torch.Tensor:  # Define bridge for longhead kernel
+      r = r.to(torch.bfloat16)
+      w = w.to(torch.bfloat16)
+      k = k.to(torch.bfloat16)
+      v = v.to(torch.bfloat16)
+      a = a.to(torch.bfloat16)
+      b = b.to(torch.bfloat16)
       B, T, HC = w.shape  # Read tensor dimensions
       if HC % HEAD_SIZE != 0:  # Confirm divisibility
         raise RuntimeError('hidden size is not divisible by RWKV head size for longhead kernel')  # Provide error context
@@ -526,6 +549,7 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
       return outputs.view(B, T, HC)  # Flatten back to original layout
 
     rwkvop.RUN_CUDA_RWKV7g = run_longhead  # Switch RWKV operator to wind longhead implementation
+    self._patch_att_kernel(run_longhead)
 
   def _activate_fla_chunk(self, args: TrainingArgs, cfg: dict, device_info: Dict[str, object]) -> None:  # Enable Flash Linear Attention fallback kernel
     if not device_info.get('is_cuda', False):  # FLA kernels rely on GPU execution
@@ -538,6 +562,12 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
     head_size = args.head_size_a  # Capture head size for view reshaping
 
     def run_fla(r: torch.Tensor, w: torch.Tensor, k: torch.Tensor, v: torch.Tensor, a: torch.Tensor, b: torch.Tensor, HEAD_SIZE: int = head_size) -> torch.Tensor:  # Define bridge to FLA kernel
+      r = r.to(torch.bfloat16)
+      w = w.to(torch.bfloat16)
+      k = k.to(torch.bfloat16)
+      v = v.to(torch.bfloat16)
+      a = a.to(torch.bfloat16)
+      b = b.to(torch.bfloat16)
       B, T, HC = w.shape  # Capture dimensions
       if HC % HEAD_SIZE != 0:  # Validate divisibility by head size
         raise RuntimeError('hidden size is not divisible by RWKV head size for FLA kernel')  # Provide context on mismatch
@@ -558,6 +588,7 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
       return outputs.view(B, T, HC)  # Restore flattened tensor layout for downstream modules
 
     rwkvop.RUN_CUDA_RWKV7g = run_fla  # Patch RWKV operator to leverage FLA kernel
+    self._patch_att_kernel(run_fla)
 
   def forward(
     self,
