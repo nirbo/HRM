@@ -1950,3 +1950,4 @@
 2025-10-01T00:41Z: Added TORCH_COMPILE_DISABLE and PYTORCH_COMPILE_DISABLE env guards to avoid torch.compile capturing huge graphs.
 2025-10-01T00:44Z: Added temporary CUDA memory debug prints around forward pass to inspect allocation spike.
 2025-10-01T00:50Z: Added gradient checkpointing toggle (config + CLI) and RWKV7 encoder checkpoint wrapper to reduce activation memory (use_reentrant=False).
+2025-10-01T00:55Z: Added --override CLI for dot-path config overrides; uses yaml parsing and updates OmegaConf before training.

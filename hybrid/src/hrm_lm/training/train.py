@@ -1,6 +1,7 @@
 # trainer with advanced logging and checkpointing
 import contextlib
 import json
+import yaml
 import math
 import multiprocessing as mp  # Provide worker pools for parallel dataset parsing
 import os
@@ -522,6 +523,7 @@ def main():
   parser.add_argument('--max_val_samples', type=int, default=0, help='Limit the number of validation samples evaluated per checkpoint (0 = use all).')  # Allow partial validation sweeps for speed.
   parser.add_argument('--hrm_gate_warmup_steps', type=int, default=0, help='Number of steps to keep the HRM bridge gate closed before enabling it (0 = immediate).')  # Smoothly introduce HRM conditioning after language warmup.
   parser.add_argument('--lr_min_ratio', type=float, default=0.0, help='Lower bound multiplier applied to decay-based LR schedules (0 keeps the exact schedule shape).')  # Prevent cosine/linear schedules from decaying below a fixed floor.
+  parser.add_argument('--override', action='append', default=None, help='Dot-path override (e.g. model.encoder.kernel_preference=fla_chunk). Repeatable.')
   parser.add_argument('--grad_checkpoint', action='store_true', help='Enable gradient checkpointing for the encoder to trade compute for memory.')
   args = parser.parse_args()
 
@@ -534,6 +536,16 @@ def main():
   loss_cli_kwargs = parse_kwargs(args.loss_kwargs)
 
   cfg = OmegaConf.load(args.config) if args.config else OmegaConf.load(Path(__file__).parent.parent / 'configs' / 'default.yaml')
+  if args.override:
+    for entry in args.override:
+      if '=' not in entry:
+        raise ValueError(f"Invalid override '{entry}'; expected key=value format")
+      key, value_str = entry.split('=', 1)
+      try:
+        value = yaml.safe_load(value_str)
+      except Exception:
+        value = value_str
+      OmegaConf.update(cfg, key.strip(), value, merge=True)
   tf32_enabled = bool(getattr(cfg.train, 'enable_tf32', False))
   configure_tf32(tf32_enabled)
   backend_choice = getattr(cfg.model.encoder, 'backend', 'transformer')

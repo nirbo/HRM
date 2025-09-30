@@ -24,7 +24,7 @@ model:
       lora:
         r: 16
         alpha: 32
-        dropout: 0.01
+        dropout: 0.00
         load_path: ""    # optional path to resume LoRA weights
       pissa:
         r: 16

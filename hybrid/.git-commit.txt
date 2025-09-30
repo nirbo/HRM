@@ -1,10 +1,8 @@
-Title: Add gradient checkpointing support for RWKV7 training
+Title: Allow CLI overrides and zero LoRA dropout for RWKV7 runs
 
 Summary:
-- expose --grad_checkpoint CLI flag and propagate to config; tighten encoder/decoder seq_len syncing.
-- wire RWKV7 encoder to optionally wrap blocks with torch.utils.checkpoint (use_reentrant=False) for memory relief.
-- document new toggle and dataset settings in rwkv7_lora.yaml (grad_checkpoint:false default, ctx=512).
-- log activation memory note in llm.state.
+- add --override flag to trainer; parse key=value pairs with yaml and apply via OmegaConf.update before runtime.
+- default rwkv7 LoRA dropout to 0.0 (matches memory tuning) and note change in statefile.
 
 Testing:
-- PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/models/rwkv7_backend.py src/hrm_lm/training/train.py
+- PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py
