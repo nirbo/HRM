@@ -38,6 +38,13 @@ except ImportError:  # torch.profiler optional depending on build
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
+DEFAULT_CUDA_ENV = {  # Map CUDA environment variables that should receive defaults when unset
+  'TORCH_CUDA_ARCH_LIST': '12.0+PTX',  # Ensure kernels target Blackwell (SM 120) with PTX fallback
+  'MAX_JOBS': '30',  # Limit parallel build workers for NVCC/Triton compiles to avoid oversubscription
+}  # Close CUDA defaults mapping
+for _env_key, _env_val in DEFAULT_CUDA_ENV.items():  # Iterate through required CUDA-related environment variables
+  os.environ.setdefault(_env_key, _env_val)  # Set default value when the variable is absent to spare manual exports
+
 warnings.filterwarnings('ignore', message='.*Nested Tensor.*')
 console = Console(highlight=False)
 
@@ -529,8 +536,8 @@ def main():
   tf32_enabled = bool(getattr(cfg.train, 'enable_tf32', False))
   configure_tf32(tf32_enabled)
   backend_choice = getattr(cfg.model.encoder, 'backend', 'transformer')
-  if backend_choice not in {'transformer', 'mamba2'}:
-    raise ValueError("model.encoder.backend must be 'transformer' or 'mamba2'")
+  if backend_choice not in {'transformer', 'mamba2', 'rwkv7'}:
+    raise ValueError("model.encoder.backend must be 'transformer', 'mamba2', or 'rwkv7'")
   requested_workers = args.dataset_workers if args.dataset_workers and args.dataset_workers > 0 else 1  # Capture the requested worker count, defaulting to one process.
   cpu_cap = mp.cpu_count() or 1  # Discover the local CPU capacity to prevent oversubscription.
   dataset_workers = max(1, min(requested_workers, cpu_cap))  # Clamp worker usage within the valid CPU range.

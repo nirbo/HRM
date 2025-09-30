@@ -85,10 +85,14 @@ This document summarizes upstream tooling around BlinkDL's RWKV architecture to 
 
 ## Integration Notes
 
+- Ensure FPGA or enterprise setups use wind_rwkv kernels (auto-detected).
+- Add Flash-Linear-Attention support for efficient scheduling.
+
 - Set `model.encoder.backend: rwkv7` in the training config to activate the new wrapper.
-- Provide `model.encoder.encoder_cfg.checkpoint_path` pointing to a RWKV-7 `.pth` file; if omitted, the loader searches for `models/blinkdl-rwkv7-g1a-1.5b/rwkv-final.pth` by default.
-- Optional overrides include `head_size_a`, `head_size_divisor`, `dim_att`, `dim_ffn`, and precision settings mirroring RWKV-PEFT `TrainingArgs`.
-- Ensure the CUDA toolchain is available so RWKV-PEFT can JIT compile `cuda/wkv7_cuda.cu` kernels on first import.
+- `kernel_preference` (default `auto`) now controls kernel selection: accepted values are `auto`, `wind_chunked`, `wind_longhead`, `fla_chunk`, and `default`.
+- Auto mode prioritizes wind chunked (SM80+ NVIDIA, bfloat16, ctx_len % 16 == 0), then wind longhead, then FLA; unsupported paths automatically fall back to the stock RWKV-PEFT kernel with a warning.
+- Manual overrides raise if prerequisites are not met so misconfigurations surface during init.
+- wind kernels come from the vendored `wind_rwkv` clone; FLA integration uses `flash-linear-attention`. Run `scripts/setup_rwkv_env.sh` to clone & install both repos into the venv.
 
 ## Smoke Test Plan
 

@@ -1811,6 +1811,10 @@
 - 2025-09-28T12:07:45+00:00: Implemented RWKV7-specific optimizer grouping in optim_factory (layerwise LR scales + decay handling).
 - 2025-09-28T12:08:05+00:00: Adjusted scheduler LR updates to honour per-group lr_scale factors.
 - 2025-09-28T12:08:20+00:00: Recompiled optim_factory via ./venv/bin/python -m compileall to confirm syntax.
+- 2025-09-28T13:17:00+00:00: Planned kernel support tasks (wind_rwkv + Flash-Linear-Attention) via plan tool.
+- 2025-09-28T13:17:20+00:00: Added wind_rwkv and flash-linear-attention repos to parent .gitignore.
+- 2025-09-28T13:17:35+00:00: Cloned wind_rwkv (CUDA kernel variants) for inspection.
+- 2025-09-28T13:17:45+00:00: Cloned flash-linear-attention repository for kernel support review.
 ### Pending Steps
 - None; ready to report findings.
 
@@ -1822,3 +1826,71 @@
 - RWKV7 encoder wrapper now available and selected via encoder.backend=rwkv7 while preserving HRM trainer controls.
 ### Open Issues
 - Finalize RWKV7 training integration: replicate per-parameter LR groups, wire dataset loader expectations, and add smoke tests before enabling fine-tuning.
+
+## Session 2025-09-30T19:08Z
+### Original Task Description
+- Resume integration of RWKV7 backend optimizations (wind_rwkv kernels, flash-linear-attention support), environment setup script, and documentation updates; ensure existing modifications are understood and completed.
+
+### Plan
+1. Inspect current repo state and review outstanding modifications in `src/hrm_lm/models/rwkv7_backend.py`, `RWKV.md`, `../.gitignore`.
+2. Research integration requirements for wind_rwkv and flash-linear-attention kernels; outline backend selection strategy.
+3. Implement backend auto-detection and fallback logic in RWKV7 backend, update environment setup, and capture documentation notes.
+4. Validate changes via targeted smoke tests, update statefile/logs, and prepare for commit.
+
+### Action Log
+- 2025-09-30T19:08Z: Ran `ls llm.state` to confirm statefile presence.
+- 2025-09-30T19:08Z: Reviewed AGENTS.md header via `sed -n '1,160p' AGENTS.md` per reading protocol.
+- 2025-09-30T19:08Z: Inspected current task context by reading initial portion of `llm.state`.
+- 2025-09-30T19:08Z: Checked git status via `git status -sb` to identify modified files.
+- 2025-09-30T19:08Z: Logged current UTC time for session tracking.
+
+### Pending Steps
+- Execute plan steps 1-4 above.
+
+### Current Summary
+- Session initialized; repository status captured and task plan recorded.
+
+### Open Issues
+- Need to integrate wind_rwkv and flash-linear-attention kernels with robust detection and fallbacks.
+
+- 2025-09-30T19:08Z: Completed plan step 1 by reviewing RWKV backend, documentation, and .gitignore modifications; plan tool updated to reflect progress.
+- 2025-09-30T19:11Z: Reviewed wind_rwkv and flash-linear-attention repositories to catalog available RWKV-7 kernels (chunked bf16, backstepping longhead/smallhead, Triton) and FLA chunk implementation including requirements (bf16, sequence multiple of 16, Ampere SM80+).
+- 2025-09-30T19:11Z: Confirmed wind_rwkv exposes Python entry points (load_* / attn_*) for compiled kernels; flash-linear-attention offers chunk_rwkv7 fallback compatible with RWKV-PEFT runner via WKV='fla'.
+- 2025-09-30T19:11Z: Identified selection criteria: prefer wind chunked on NVIDIA SM80+, fall back to wind longhead on other GPUs (incl. AMD) or to FLA chunk when wind kernels unavailable.
+- 2025-09-30T19:11Z: Completed plan step 2; kernel selection criteria documented and plan advanced to implementation tasks.
+- 2025-09-30T19:13Z: Updated RWKV7 backend imports to include logging/warnings and typing helpers for kernel selection logic.
+- 2025-09-30T19:14Z: Added module logger setup in RWKV7 backend to record kernel selection decisions.
+- 2025-09-30T19:14Z: Added optional sys.path hooks for wind_rwkv and flash-linear-attention repositories.
+- 2025-09-30T19:14Z: Wired kernel auto-selection entry point inside RWKV7Encoder.__init__.
+- 2025-09-30T19:17Z: Implemented RWKV7 kernel auto-selection helpers covering wind chunked/longhead and FLA fallbacks.
+- 2025-09-30T19:17Z: Ran python -m compileall on src/hrm_lm/models/rwkv7_backend.py to validate syntax after kernel selection changes.
+- 2025-09-30T19:18Z: Extended setup script to clone/install wind_rwkv and flash-linear-attention repositories.
+- 2025-09-30T19:18Z: Documented kernel_preference options and backend prerequisites in RWKV.md.
+- 2025-09-30T19:18Z: Marked plan step 3 complete; proceeding to validation and finalization tasks.
+- 2025-09-30T19:19Z: Ran PYTHONPATH=src ./venv/bin/python smoke init of RWKV7Encoder with kernel_preference='default' to verify new selection path executes without runtime errors (expected FileNotFoundError suppressed).
+- 2025-09-30T19:19Z: Plan step 4 complete after smoke instantiation and diff review; ready to summarize changes.
+### Pending Steps
+- None; change set ready for review/commit.
+
+### Current Summary
+- Added kernel auto-selection to RWKV7Encoder with wind chunked/longhead and FLA fallbacks plus configuration knob.
+- Extended setup script to clone & install wind_rwkv and flash-linear-attention; documented usage in RWKV.md.
+- Performed syntax checks and basic instantiation smoke test (default backend) to confirm loader executes without runtime errors.
+
+### Open Issues
+- Need live GPU validation for wind_chunked / wind_longhead / FLA paths and end-to-end training once hardware is available.
+
+- 2025-09-30T19:31Z: User requested confirmation about trainer integration; need to allow backend='rwkv7'.
+- 2025-09-30T19:32Z: Added ad-hoc plan step to extend trainer backend whitelist for RWKV7.
+- 2025-09-30T19:32Z: Updated trainer backend whitelist to include 'rwkv7'.
+- 2025-09-30T19:32Z: Ran compileall on trainer after backend whitelist change.
+- 2025-09-30T19:32Z: Plan step complete; trainer now accepts rwkv7 backend.
+- 2025-09-30T19:44Z: Started plan to inject default CUDA env vars into trainer script for RTX 5090 convenience.
+- 2025-09-30T19:45Z: Injected default TORCH_CUDA_ARCH_LIST and MAX_JOBS exports into trainer for automated CUDA setup.
+- 2025-09-30T19:45Z: Recompiled trainer after CUDA env injection to confirm syntax.
+### Current Summary
+- Trainer now auto-sets TORCH_CUDA_ARCH_LIST=12.0+PTX and MAX_JOBS=30 when absent, matching RTX 5090 build expectations.
+
+### Open Issues
+- None related to CUDA env automation; proceed with kernel smoke tests and training runs.
+

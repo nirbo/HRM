@@ -17,6 +17,8 @@ RWKV_REPOS=(
   "https://github.com/josStorer/RWKV-Runner.git|$ROOT_DIR/RWKV-Runner"
   "https://github.com/RWKV/rwkv.cpp.git|$ROOT_DIR/rwkv.cpp"
   "https://github.com/BlinkDL/ChatRWKV.git|$ROOT_DIR/ChatRWKV"
+  "https://github.com/johanwind/wind_rwkv.git|$ROOT_DIR/wind_rwkv"
+  "https://github.com/fla-org/flash-linear-attention.git|$ROOT_DIR/flash-linear-attention"
 )
 
 create_venv() {
@@ -57,6 +59,22 @@ sync_repo() {
   fi
 }
 
+install_local_repos() {
+  local pip_bin="$VENV_DIR/bin/pip"
+  if [[ ! -x "$pip_bin" ]]; then
+    echo "[setup] pip not found in venv ($pip_bin)" >&2
+    exit 1
+  fi
+  if [[ -d "$ROOT_DIR/wind_rwkv" ]]; then
+    echo "[setup] Installing wind_rwkv (editable)"
+    "$pip_bin" install $PIP_FLAGS -e "$ROOT_DIR/wind_rwkv"
+  fi
+  if [[ -d "$ROOT_DIR/flash-linear-attention" ]]; then
+    echo "[setup] Installing flash-linear-attention (editable)"
+    "$pip_bin" install $PIP_FLAGS -e "$ROOT_DIR/flash-linear-attention"
+  fi
+}
+
 main() {
   create_venv
   install_requirements
@@ -64,6 +82,7 @@ main() {
     IFS="|" read -r url dest <<<"$entry"
     sync_repo "$url" "$dest"
   done
+  install_local_repos
   echo "[setup] RWKV environment ready"
 }
 

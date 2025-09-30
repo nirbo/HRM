@@ -181,3 +181,5 @@ hybrid/RWKV-infctx-trainer/
 hybrid/RWKV-Runner/
 hybrid/rwkv.cpp/
 hybrid/ChatRWKV/
+hybrid/wind_rwkv/
+hybrid/flash-linear-attention/
