@@ -1,10 +1,9 @@
-Title: Restore default RWKV kernel path with bf16 guard
+Title: Recalculate scheduler for batch 2 / accum 16 baseline
 
 Summary:
-- cache the baseline RUN_CUDA_RWKV7g before patching and add a default backend activator.
-- ensure default kernel usage casts r/w/k/v/a/b to bf16 and repoints both operator and attention module hooks.
-- log fallback handling so selecting kernel_preference=default now works without dtype asserts.
+- set rwkv7_lora defaults to batch_size=2, eval_batch_size=2, grad_accum_steps=16.
+- rescale warmup/stable/decay steps to 31/137/79 (247 optimizer steps) for the 7,899-sample split.
+- log scheduler change in llm.state.
 
 Testing:
-- PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/models/rwkv7_backend.py
-- PYTHONPATH=src timeout 30s ./venv/bin/python -m hrm_lm.training.train --config src/hrm_lm/configs/rwkv7_lora.yaml --dataset datasets/openai-gsm8k-socratic/ --batch_size 4 --grad_accum_steps 8 --steps 267 --learning_rate 0.0002 --warmup_steps 62 --lr_min_ratio 0.02 --grad_clip 1.5 --val_every 100 --run_name test-kernel-default --checkpoint_limit 3 --mixed_precision bf16 --eval_batch_size 4 --log_steps 1 --dataset_workers 4 --save_best_model --max_seq_len 512 --max_val_samples 16 --eval_loss_patience 6 --patience_grace_steps 200 --hrm_gate_warmup_steps 100 --grad_checkpoint --optimizer tiger --override model.encoder.kernel_preference=default --override model.encoder.peft.lora.r=8
+- n/a (config update only)
