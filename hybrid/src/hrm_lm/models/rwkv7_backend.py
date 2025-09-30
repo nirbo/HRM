@@ -67,6 +67,7 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
     os.environ.setdefault('RWKV_MY_TESTING', str(cfg.get('model_variant', 'x070')))  # Select RWKV-7 kernel family by default
     os.environ['RWKV_CTXLEN'] = str(max_seq_len)  # Share context length so CUDA kernels compile with correct dimensions
     os.environ.setdefault('RWKV_HEAD_SIZE_A', str(cfg.get('head_size_a', 64)))  # Provide head size hint for kernel compilation
+    os.environ.setdefault('RWKV_HEAD_SIZE_DIV', str(cfg.get('head_size_divisor', 8)))  # Mirror divisor used by RWKV-PEFT normalization
     os.environ.setdefault('RWKV_TRAIN_TYPE', str(cfg.get('train_type', 'none')))  # Default to standard training mode (no state tuning)
     os.environ.setdefault('WKV', str(cfg.get('wkv_backend', 'cuda')))  # Opt into CUDA custom kernels when available
     os.environ.setdefault('FUSED_KERNEL', '1' if cfg.get('fused_kernel', False) else '0')  # Enable fused kernels only when explicitly requested

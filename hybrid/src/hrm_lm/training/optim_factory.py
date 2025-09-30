@@ -33,6 +33,7 @@ from pytorch_optimizer import (
   get_supported_loss_functions,
   get_supported_lr_schedulers,
   get_supported_optimizers,
+  load_optimizer,
 )
 from pytorch_optimizer.loss import LOSS_FUNCTIONS
 from pytorch_optimizer.lr_scheduler import CosineScheduler, LinearScheduler, PolyScheduler, REXScheduler
@@ -65,6 +66,7 @@ OPTIMIZER_ALIASES: Dict[str, str] = {
 
 CAME_BETA_DEFAULT = 0.999
 BETAS_REQUIRE_3 = {'came'}
+_RWKV_UNSUPPORTED_OPTIMIZERS = {'alig', 'lomo', 'adalomo', 'adammini', 'muon', 'adamuon'}
 
 LR_SCHEDULER_ALIASES: Dict[str, str] = {
   'cosine_restart': 'cosine_annealing_with_warm_restart',
@@ -141,7 +143,131 @@ def normalise_name(name: Optional[str], *, default: str) -> str:
 
 def _set_optimizer_lr(optimizer: Optimizer, lr: float) -> None:
   for group in optimizer.param_groups:
-    group['lr'] = float(lr)
+    scale = float(group.get('lr_scale', 1.0))
+    group['lr'] = float(lr) * scale
+
+
+def _should_decay(name: str, param: nn.Parameter, weight_decay: float, ban_list: Tuple[str, ...]) -> bool:
+  if weight_decay <= 0.0:
+    return False
+  if param.dim() <= 1:
+    return False
+  lowered = name.lower()
+  for pattern in ban_list:
+    if pattern.lower() in lowered:
+      return False
+  return True
+
+
+def _rwkv7_layerwise_groups(
+  rwkv_module: nn.Module,
+  *,
+  weight_decay: float,
+  ban_list: Tuple[str, ...],
+  layerwise_lr: bool,
+  pile_stage: int,
+) -> Tuple[List[nn.Parameter], List[nn.Parameter], List[nn.Parameter], List[nn.Parameter]]:
+  lr_1x: List[nn.Parameter] = []
+  lr_2x: List[nn.Parameter] = []
+  lr_3x: List[nn.Parameter] = []
+  decay: List[nn.Parameter] = []
+
+  for name, param in rwkv_module.named_parameters():
+    if not param.requires_grad:
+      continue
+    target: Optional[List[nn.Parameter]] = None
+    if layerwise_lr and ("_w1" in name or "_w2" in name):
+      target = lr_1x
+    elif layerwise_lr and ("time_mix" in name or "time_maa" in name):
+      target = lr_2x if pile_stage == 2 else lr_1x
+    elif layerwise_lr and ("time_decay" in name or "time_daaaa" in name):
+      target = lr_3x if pile_stage == 2 else lr_2x
+    elif layerwise_lr and ("time_faaaa" in name):
+      target = lr_2x if pile_stage == 2 else lr_1x
+    elif layerwise_lr and ("time_first" in name):
+      target = lr_3x
+    elif _should_decay(name, param, weight_decay, ban_list):
+      target = decay
+    else:
+      target = lr_1x
+    target.append(param)
+
+  return lr_1x, lr_2x, lr_3x, decay
+
+
+def _build_rwkv7_optimizer(
+  model: nn.Module,
+  *,
+  optimizer_name: str,
+  base_lr: float,
+  weight_decay: float,
+  ban_list: Tuple[str, ...],
+  effective_kwargs: Dict[str, Any],
+  cfg_mapping: Dict[str, Any],
+) -> Optional[Optimizer]:
+  encoder = getattr(model, 'encoder', None)
+  backend = getattr(encoder, 'backend', None)
+  if backend != 'rwkv7':
+    return None
+
+  wrapper = getattr(encoder, 'enc', None)
+  rwkv_module = getattr(wrapper, 'model', None)
+  if rwkv_module is None:
+    return None
+
+  layerwise_lr = bool(cfg_mapping.get('layerwise_lr', True))
+  pile_stage = int(cfg_mapping.get('rwkv_stage', 1))
+
+  lr_1x, lr_2x, lr_3x, decay = _rwkv7_layerwise_groups(
+    rwkv_module,
+    weight_decay=weight_decay,
+    ban_list=ban_list,
+    layerwise_lr=layerwise_lr,
+    pile_stage=pile_stage,
+  )
+
+  rwkv_param_ids = {id(p) for p in rwkv_module.parameters()}
+  other_decay: List[nn.Parameter] = []
+  other_main: List[nn.Parameter] = []
+  for name, param in model.named_parameters():
+    if id(param) in rwkv_param_ids or not param.requires_grad:
+      continue
+    if _should_decay(name, param, weight_decay, ban_list):
+      other_decay.append(param)
+    else:
+      other_main.append(param)
+
+  groups: List[Dict[str, Any]] = []
+
+  def add_group(params: List[nn.Parameter], *, decay_value: float, scale: float) -> None:
+    if params:
+      groups.append({'params': params, 'weight_decay': decay_value, 'lr_scale': scale})
+
+  if layerwise_lr:
+    if pile_stage == 2:
+      add_group(lr_1x, decay_value=0.0, scale=1.0)
+      add_group(lr_2x, decay_value=0.0, scale=5.0)
+      add_group(lr_3x, decay_value=0.0, scale=5.0)
+    else:
+      add_group(lr_1x, decay_value=0.0, scale=1.0)
+      add_group(lr_2x, decay_value=0.0, scale=2.0)
+      add_group(lr_3x, decay_value=0.0, scale=3.0)
+  else:
+    add_group(lr_1x, decay_value=0.0, scale=1.0)
+
+  add_group(decay, decay_value=weight_decay, scale=1.0)
+  add_group(other_main, decay_value=0.0, scale=1.0)
+  add_group(other_decay, decay_value=weight_decay, scale=1.0)
+
+  if not groups:
+    return None
+
+  if optimizer_name in _RWKV_UNSUPPORTED_OPTIMIZERS:
+    raise ValueError(f"Optimizer '{optimizer_name}' is not supported with RWKV-7 custom grouping.")
+
+  optimizer_class = load_optimizer(optimizer_name)
+  optimizer = optimizer_class(groups, lr=float(base_lr), **effective_kwargs)
+  return optimizer
 
 
 # ---------------------------------------------------------------------------
@@ -204,14 +330,28 @@ def build_optimizer(
   else:
     wd_ban_tuple = tuple(wd_ban_list)
 
-  optimizer = create_optimizer(
+  custom_kwargs = dict(effective_kwargs)
+  custom_kwargs.pop('weight_decay', None)
+
+  optimizer = _build_rwkv7_optimizer(
     model,
-    resolved_name,
-    lr=float(base_lr),
+    optimizer_name=resolved_name,
+    base_lr=float(base_lr),
     weight_decay=weight_decay,
-    wd_ban_list=wd_ban_tuple,
-    **effective_kwargs,
+    ban_list=wd_ban_tuple,
+    effective_kwargs=custom_kwargs,
+    cfg_mapping=cfg_mapping,
   )
+
+  if optimizer is None:
+    optimizer = create_optimizer(
+      model,
+      resolved_name,
+      lr=float(base_lr),
+      weight_decay=weight_decay,
+      wd_ban_list=wd_ban_tuple,
+      **effective_kwargs,
+    )
 
   if resolved_name in BETAS_REQUIRE_3:
     for group in optimizer.param_groups:

@@ -1,6 +1,7 @@
-RWKV-7 backend integration groundwork
+Integrate RWKV7 backend groundwork
 
-- add setup script that prepares venv and clones required RWKV upstream repos
-- allow tracking of new backend module by adjusting gitignore rules
-- introduce RWKV7 encoder wrapper and wire it into LMEncoder
-- document integration steps and log progress in statefile
+- add setup script that prepares venv and clones upstream RWKV repos
+- tweak gitignore so new backend files remain tracked
+- introduce RWKV7 encoder wrapper and wire backend selector into LMEncoder
+- extend optim_factory with RWKV7 layerwise parameter grouping
+- document integration notes and smoke-test plan in RWKV.md, log progress in llm.state

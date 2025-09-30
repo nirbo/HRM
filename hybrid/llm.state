@@ -1803,6 +1803,14 @@
 - 2025-09-28T12:03:25+00:00: Relaxed local .gitignore to re-include src/hrm_lm/models/ after introducing RWKV wrapper.
 - 2025-09-28T12:03:40+00:00: Ran ./venv/bin/python -m compileall on encoder and RWKV backend to validate syntax.
 - 2025-09-28T12:04:10+00:00: Extended RWKV.md with integration instructions for encoder.backend=rwkv7 and default checkpoint handling.
+- 2025-09-28T12:05:00+00:00: Planned next-phase tasks (optimizer groups, dataset strategy, smoke tests) via plan tool.
+- 2025-09-28T12:05:30+00:00: Inspected RWKV-PEFT lightning optimizer implementation to map layerwise LR groupings (1x/2x/3x + decay).
+- 2025-09-28T12:06:00+00:00: Reviewed RWKV-PEFT dataset module to note binidx/sft/jsonl capabilities and mask handling.
+- 2025-09-28T12:06:40+00:00: Drafted idea to run forward-loss + gradient smoke tests on RWKV7 checkpoint once optimizer/dataset wiring is ready.
+- 2025-09-28T12:07:05+00:00: Added smoke-test checklist to RWKV.md covering forward loss, gradient, and generate path validation.
+- 2025-09-28T12:07:45+00:00: Implemented RWKV7-specific optimizer grouping in optim_factory (layerwise LR scales + decay handling).
+- 2025-09-28T12:08:05+00:00: Adjusted scheduler LR updates to honour per-group lr_scale factors.
+- 2025-09-28T12:08:20+00:00: Recompiled optim_factory via ./venv/bin/python -m compileall to confirm syntax.
 ### Pending Steps
 - None; ready to report findings.
 

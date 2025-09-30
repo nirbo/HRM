@@ -89,3 +89,10 @@ This document summarizes upstream tooling around BlinkDL's RWKV architecture to 
 - Provide `model.encoder.encoder_cfg.checkpoint_path` pointing to a RWKV-7 `.pth` file; if omitted, the loader searches for `models/blinkdl-rwkv7-g1a-1.5b/rwkv-final.pth` by default.
 - Optional overrides include `head_size_a`, `head_size_divisor`, `dim_att`, `dim_ffn`, and precision settings mirroring RWKV-PEFT `TrainingArgs`.
 - Ensure the CUDA toolchain is available so RWKV-PEFT can JIT compile `cuda/wkv7_cuda.cu` kernels on first import.
+
+## Smoke Test Plan
+
+1. **Forward-loss sanity** – load a short prompt (BS=1, seq≤32), run through `RWKV7Encoder` + HRM decoder, compute cross entropy. Loss must be finite and within tolerance of the standalone RWKV-PEFT logits (see `RWKV-v7/train_temp/rwkv_v7_demo.py`).
+2. **Gradient check** – take a tiny JSONL batch, call `loss.backward()`, and confirm gradients are finite through the HRM bridge (mirrors `train_temp/train.py`).
+3. **Generation round-trip** – invoke `hrm_lm.inference.generate` with `encoder.backend=rwkv7` and compare behaviour to `rwkv_v7_demo.py` outputs.
+4. **Checkpoint resume** – load a saved `runs/.../checkpoints/step_xxxxxx/model.pt` and ensure resume works (weights, optimizer, scheduler) matching our trainer’s checkpoint directory structure.
