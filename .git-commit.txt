@@ -1,7 +1,9 @@
-Title: Update statefile after branch snapshot push
+Title: Support gradient accumulation and parallel dataset tokenization
 
 Summary:
-- Logged push of feature/pytorch-optimizer-integration branch for traceability.
+- Added grad_accum_steps CLI/config plumbing and refactored the training loop for micro-batch accumulation, scheduler-aware effective steps, and checkpoint metadata updates.
+- Updated default configs, documentation, and statefile to document the new accumulation behaviour.
+- Parallelized scripts/prepare_dataset.py triple conversion using ProcessPoolExecutor tied to --tokenizer-num-threads, streaming results through temporary chunk files before merging.
 
 Testing:
-- Not applicable (statefile note only).
+- hybrid/venv/bin/python -m compileall hybrid/src/hrm_lm/training/train.py hybrid/src/hrm_lm/training/optim_factory.py hybrid/src/hrm_lm/models/hybrid.py scripts/prepare_dataset.py

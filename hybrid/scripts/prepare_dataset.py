@@ -40,8 +40,10 @@ import math
 import os
 import random
 import shutil
+import tempfile
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional
+from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
 import pyarrow.parquet as pq
 import zstandard as zstd
@@ -60,6 +62,58 @@ SUPPORTED_PATTERNS = [
     "*.jsonl", "*.jsonl.gz", "*.jsonl.zst", "*.jsonl.zstd",
     "*.json", "*.parquet", "*.zst", "*.zstd"
 ]
+
+_TOKENIZER_CACHE = None
+
+
+def _load_tokenizer(tokenizer_path: str):
+    global _TOKENIZER_CACHE
+    if _TOKENIZER_CACHE is None:
+        _TOKENIZER_CACHE = Tokenizer.from_file(tokenizer_path)
+    return _TOKENIZER_CACHE
+
+
+def _encode_chunk_worker(args: Tuple[int, List[Tuple[str, str]], str, int, int, str]) -> Tuple[int, Dict[str, int], Dict[str, str]]:
+    chunk_idx, items, tokenizer_path, max_tokens, batch_size, temp_dir = args
+    tokenizer = _load_tokenizer(tokenizer_path)
+    pad_id = tokenizer.token_to_id('<pad>')
+    if pad_id is None:
+        pad_id = tokenizer.token_to_id('[PAD]')
+    bos_id = tokenizer.token_to_id('<bos>') or tokenizer.token_to_id('<s>')
+    eos_id = tokenizer.token_to_id('<eos>') or tokenizer.token_to_id('</s>')
+    if bos_id is None or eos_id is None:
+        raise RuntimeError('Tokenizer must contain <bos>/<eos> tokens when converting to triples.')
+
+    temp_dir_path = Path(temp_dir)
+    temp_paths = {
+        'train': temp_dir_path / f'train.chunk_{chunk_idx:06d}.jsonl',
+        'val': temp_dir_path / f'val.chunk_{chunk_idx:06d}.jsonl',
+        'test': temp_dir_path / f'test.chunk_{chunk_idx:06d}.jsonl',
+    }
+    handles = {split: path.open('w', encoding='utf-8') for split, path in temp_paths.items()}
+    counts = {'train': 0, 'val': 0, 'test': 0}
+
+    try:
+        for start in range(0, len(items), batch_size):
+            batch = items[start:start + batch_size]
+            texts = [text for (_, text) in batch]
+            encodings = tokenizer.encode_batch(texts)
+            for (split, _), encoding in zip(batch, encodings):
+                ids = encoding.ids[:max_tokens]
+                seq = [bos_id] + ids + [eos_id]
+                triple = {
+                    'encoder_ids': seq[:-1],
+                    'decoder_input_ids': seq[:-1],
+                    'labels': seq[1:],
+                }
+                json.dump(triple, handles[split])
+                handles[split].write('\n')
+                counts[split] += 1
+    finally:
+        for handle in handles.values():
+            handle.close()
+
+    return chunk_idx, counts, {split: str(path) for split, path in temp_paths.items()}
 
 
 def parse_args() -> argparse.Namespace:
@@ -320,43 +374,122 @@ def convert_to_triples(clean_path: Path, output_dir: Path, args: argparse.Namesp
         bar_format=bar_format
     )
 
-    def encode_batch(records: List[Dict[str, object]], texts: List[str]):
-        encodings = tokenizer.encode_batch(texts)
-        for record, encoding in zip(records, encodings):
-            ids = encoding.ids[:max_tokens]
-            seq = [bos_id] + ids + [eos_id]
-            triple = {
-                'encoder_ids': seq[:-1],
-                'decoder_input_ids': seq[:-1],
-                'labels': seq[1:],
-            }
-            split = record['split']
-            json.dump(triple, splits[split])
-            splits[split].write('\n')
-            counts[split] += 1
-            progress.update(1)
+    worker_count = args.tokenizer_num_threads if args.tokenizer_num_threads and args.tokenizer_num_threads > 0 else 1
+    if worker_count <= 0:
+        worker_count = 1
+    cpu_cap = os.cpu_count()
+    if worker_count > 1 and cpu_cap and worker_count > cpu_cap:
+        print(f"[WARN] tokenizer-num-threads ({worker_count}) exceeds detected CPU cores ({cpu_cap}); proceeding as requested.")
 
-    batch_records: List[Dict[str, object]] = []
-    batch_texts: List[str] = []
+    if worker_count == 1:
+        splits = {
+            'train': (output_dir / 'train.jsonl').open('w', encoding='utf-8'),
+            'val': (output_dir / 'val.jsonl').open('w', encoding='utf-8'),
+            'test': (output_dir / 'test.jsonl').open('w', encoding='utf-8'),
+        }
 
-    with clean_path.open('r', encoding='utf-8') as handle:
-        for line in handle:
-            record = json.loads(line)
-            value = record.get(args.text_field)
-            if not value:
-                continue
-            split = choose_split(rng, args.val_ratio, args.test_ratio)
-            batch_records.append({'split': split})
-            batch_texts.append(str(value))
-            if len(batch_texts) >= args.tokenizer_batch_size:
-                encode_batch(batch_records, batch_texts)
-                batch_records.clear()
-                batch_texts.clear()
+        def encode_batch(records: List[Dict[str, object]], texts: List[str]):
+            encodings = tokenizer.encode_batch(texts)
+            for record, encoding in zip(records, encodings):
+                ids = encoding.ids[:max_tokens]
+                seq = [bos_id] + ids + [eos_id]
+                triple = {
+                    'encoder_ids': seq[:-1],
+                    'decoder_input_ids': seq[:-1],
+                    'labels': seq[1:],
+                }
+                split = record['split']
+                json.dump(triple, splits[split])
+                splits[split].write('\n')
+                counts[split] += 1
+                progress.update(1)
 
-    if batch_texts:
-        encode_batch(batch_records, batch_texts)
+        batch_records: List[Dict[str, object]] = []
+        batch_texts: List[str] = []
 
-    progress.close()
+        with clean_path.open('r', encoding='utf-8') as handle:
+            for line in handle:
+                record = json.loads(line)
+                value = record.get(args.text_field)
+                if not value:
+                    continue
+                split = choose_split(rng, args.val_ratio, args.test_ratio)
+                batch_records.append({'split': split})
+                batch_texts.append(str(value))
+                if len(batch_texts) >= args.tokenizer_batch_size:
+                    encode_batch(batch_records, batch_texts)
+                    batch_records.clear()
+                    batch_texts.clear()
+
+        if batch_texts:
+            encode_batch(batch_records, batch_texts)
+
+        progress.close()
+        for handle in splits.values():
+            handle.close()
+    else:
+        print(f"[INFO] Using {worker_count} parallel tokenizer workers (batch size {args.tokenizer_batch_size}).")
+        chunk_size = args.tokenizer_batch_size * 4
+        print(f"[INFO] Dispatching chunks of {chunk_size} records to workers...")
+        tokenizer_path = str(Path(args.tokenizer).resolve())
+        temp_dir = tempfile.mkdtemp(prefix='prepare_triples_', dir=str(output_dir))
+        chunk_records: List[Tuple[str, str]] = []
+        futures = {}
+        chunk_outputs: Dict[int, Dict[str, str]] = {}
+        chunk_counts: Dict[int, Dict[str, int]] = {}
+        chunk_idx = 0
+
+        with ProcessPoolExecutor(max_workers=worker_count) as executor:
+            with clean_path.open('r', encoding='utf-8') as handle:
+                for line in handle:
+                    record = json.loads(line)
+                    value = record.get(args.text_field)
+                    if not value:
+                        continue
+                    split = choose_split(rng, args.val_ratio, args.test_ratio)
+                    chunk_records.append((split, str(value)))
+                    if len(chunk_records) >= chunk_size:
+                        payload = (chunk_idx, chunk_records[:], tokenizer_path, max_tokens, args.tokenizer_batch_size, temp_dir)
+                        future = executor.submit(_encode_chunk_worker, payload)
+                        futures[future] = len(chunk_records)
+                        chunk_records.clear()
+                        chunk_idx += 1
+            if chunk_records:
+                payload = (chunk_idx, chunk_records[:], tokenizer_path, max_tokens, args.tokenizer_batch_size, temp_dir)
+                future = executor.submit(_encode_chunk_worker, payload)
+                futures[future] = len(chunk_records)
+                chunk_records.clear()
+                chunk_idx += 1
+
+            for future in as_completed(futures):
+                processed = futures[future]
+                idx, chunk_count, chunk_files = future.result()
+                progress.update(processed)
+                chunk_outputs[idx] = chunk_files
+                chunk_counts[idx] = chunk_count
+        print('[INFO] All chunks processed; merging temporary files into final splits...')
+
+        progress.close()
+
+        splits = {
+            'train': (output_dir / 'train.jsonl').open('w', encoding='utf-8'),
+            'val': (output_dir / 'val.jsonl').open('w', encoding='utf-8'),
+            'test': (output_dir / 'test.jsonl').open('w', encoding='utf-8'),
+        }
+        try:
+            for idx in sorted(chunk_outputs.keys()):
+                files = chunk_outputs[idx]
+                counts_idx = chunk_counts[idx]
+                for split, temp_path in files.items():
+                    with open(temp_path, 'r', encoding='utf-8') as src:
+                        shutil.copyfileobj(src, splits[split])
+                    counts[split] += counts_idx.get(split, 0)
+                    os.remove(temp_path)
+        finally:
+            for handle in splits.values():
+                handle.close()
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        print('[INFO] Merge complete.')
 
     for fh in splits.values():
         fh.close()

@@ -432,6 +432,7 @@ def build_checkpoint_payload(
     'scheduler_kwargs': scheduler_spec.kwargs,
     'loss_name': loss_name,
     'loss_kwargs': loss_kwargs,
+    'grad_accum_steps': cfg_serializable.get('train', {}).get('grad_accum_steps', 1),
   }
   scheduler_state = scheduler.state_dict() if scheduler is not None else None
   if scheduler_state is not None:
@@ -487,6 +488,7 @@ def main():
   parser.add_argument('--dataset', default=None)
   parser.add_argument('--batch_size', type=int, default=None)
   parser.add_argument('--eval_batch_size', type=int, default=None)  # optional override for validation batch sizing
+  parser.add_argument('--grad_accum_steps', type=int, default=None, help='Number of micro-batches to accumulate before each optimizer step (default: config or 1).')
   parser.add_argument('--optimizer', default=None, help='Optimizer name (default uses config optim.name).')
   parser.add_argument('--optimizer_kwargs', default=None, help='JSON/dict string overriding optimizer kwargs.')
   parser.add_argument('--learning_rate', type=float, default=None)
@@ -567,6 +569,13 @@ def main():
   if effective_eval_batch_size <= 0:  # ensure evaluation batch size remains valid
     raise ValueError('evaluation batch size must be positive')  # raise explicit error for invalid configuration
   cfg.train.eval_batch_size = effective_eval_batch_size  # persist resolved evaluation batch size in config
+
+  accum_cfg = getattr(cfg.train, 'grad_accum_steps', 1)
+  accum_steps = args.grad_accum_steps if args.grad_accum_steps is not None else accum_cfg
+  accum_steps = int(accum_steps)
+  if accum_steps <= 0:
+    raise ValueError('grad_accum_steps must be positive')
+  cfg.train.grad_accum_steps = accum_steps
 
   effective_seq_len = args.max_seq_len if args.max_seq_len is not None else cfg.train.seq_len
   if effective_seq_len <= 0:
@@ -740,7 +749,8 @@ def main():
   if total_steps <= 0:
     if args.epochs <= 0:
       raise ValueError('Specify a positive --steps or --epochs')
-    steps_per_epoch = max(1, math.ceil(dataset_size / effective_batch_size))
+    denom = max(1, effective_batch_size * accum_steps)
+    steps_per_epoch = max(1, math.ceil(dataset_size / denom))
     total_steps = steps_per_epoch * args.epochs
 
   warmup_steps = max(0, args.warmup_steps)
@@ -952,13 +962,17 @@ def main():
     dec_mask,
     *,
     apply_clip: bool = True,
+    zero_grad: bool = True,
+    step_optimizer: bool = True,
+    loss_scale: float = 1.0,
     nvtx: Optional[NvtxRangeManager] = None,
     fp8_context: Optional[Callable[[bool], contextlib.AbstractContextManager]] = None,
     fp8_enabled: bool = False,
   ):
-    zero_ctx = nvtx('optimizer.zero_grad') if nvtx is not None else contextlib.nullcontext()
+    zero_ctx = nvtx('optimizer.zero_grad') if (nvtx is not None and zero_grad) else contextlib.nullcontext()
     with zero_ctx:
-      optimizer.zero_grad(set_to_none=True)
+      if zero_grad:
+        optimizer.zero_grad(set_to_none=True)
 
     fp8_ctx = fp8_context(fp8_enabled) if fp8_context is not None else contextlib.nullcontext()
     autocast_ctx = torch.autocast(**autocast_kwargs) if autocast_kwargs else contextlib.nullcontext()
@@ -966,33 +980,45 @@ def main():
     with fp8_ctx, autocast_ctx, forward_ctx:
       model_out = model(enc, dec_in, enc_attn_mask=enc_mask, dec_attn_mask=dec_mask, labels=labels)
       loss_tensor, step_metrics = compute_total_loss(model_out, labels)
+      scaled_loss = loss_tensor if loss_scale == 1.0 else loss_tensor * loss_scale
 
     backward_ctx = nvtx('backward') if nvtx is not None else contextlib.nullcontext()
     with backward_ctx:
       if scaler is not None and scaler.is_enabled():
-        scaler.scale(loss_tensor).backward()
-        scaler.unscale_(optimizer)
+        scaler.scale(scaled_loss).backward()
+        if step_optimizer:
+          scaler.unscale_(optimizer)
       else:
-        loss_tensor.backward()
+        scaled_loss.backward()
 
-    raw_grad_norm = gradient_norm(model)
+    raw_grad_norm = None
+    clipped_grad_norm = None
+    if step_optimizer:
+      raw_grad_norm = gradient_norm(model)
+      if apply_clip and args.grad_clip > 0:
+        clip_ctx = nvtx('grad_clip') if nvtx is not None else contextlib.nullcontext()
+        with clip_ctx:
+          torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+      clipped_grad_norm = gradient_norm(model)
 
-    if apply_clip and args.grad_clip > 0:
-      clip_ctx = nvtx('grad_clip') if nvtx is not None else contextlib.nullcontext()
-      with clip_ctx:
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+    if step_optimizer:
+      opt_ctx = nvtx('optimizer.step') if nvtx is not None else contextlib.nullcontext()
+      with opt_ctx:
+        if scaler is not None and scaler.is_enabled():
+          scaler.step(optimizer)
+          scaler.update()
+        else:
+          optimizer.step()
 
-    opt_ctx = nvtx('optimizer.step') if nvtx is not None else contextlib.nullcontext()
-    with opt_ctx:
-      if scaler is not None and scaler.is_enabled():
-        scaler.step(optimizer)
-        scaler.update()
-      else:
-        optimizer.step()
-    step_metrics = dict(step_metrics) if step_metrics else {}
-    step_metrics['loss_total'] = float(loss_tensor.detach())
-    step_metrics['grad_norm_raw'] = raw_grad_norm
-    return loss_tensor, step_metrics
+    metrics_out: Dict[str, float] = {}
+    if step_optimizer and step_metrics:
+      metrics_out = dict(step_metrics)
+      metrics_out['loss_total'] = float(loss_tensor.detach())
+      if raw_grad_norm is not None:
+        metrics_out['grad_norm_raw'] = raw_grad_norm
+      if clipped_grad_norm is not None:
+        metrics_out['grad_norm_clipped'] = clipped_grad_norm
+    return loss_tensor, metrics_out
 
   def clone_static_buffers(batch_tensors: Tuple[torch.Tensor, ...]) -> Tuple[torch.Tensor, ...]:
     return tuple(t.clone().detach() for t in batch_tensors)
@@ -1011,6 +1037,9 @@ def main():
         nvtx=None,
         fp8_context=fp8_context_factory,
         fp8_enabled=fp8_enabled,
+        zero_grad=True,
+        step_optimizer=True,
+        loss_scale=1.0,
       )
     metrics_dict = metrics_dict if isinstance(metrics_dict, dict) else {}
     return {
@@ -1024,46 +1053,54 @@ def main():
   if use_cuda_graphs and not bool(getattr(model, 'supports_cuda_graphs', True)):
     console.print('[bold yellow]CUDA graphs disabled: current model backend does not support capture-safe execution.[/bold yellow]')
     use_cuda_graphs = False
-  global_step = start_step
+  if use_cuda_graphs and accum_steps > 1:
+    console.print('[bold yellow]CUDA graphs disabled: grad accumulation requires eager execution (accum_steps > 1).[/bold yellow]')
+    use_cuda_graphs = False
+  global_step = start_step  # preserved for backward compatibility; represents optimizer steps
   graphs_ready = False
   first_step_completed = not use_cuda_graphs
   graph_state = None
   fp8_activation_announced = fp8_context_factory is None
 
-  while global_step < total_steps:
-    if nvtx_range.enabled and nvtx_include_data:
-      with nvtx_range('data.next_batch'):
-        batch_tensors = get_next_batch()
-    else:
-      batch_tensors = get_next_batch()
-    global_step += 1
+  optimizer_step = global_step
+
+  while optimizer_step < total_steps:
+    effective_step = optimizer_step + 1
     current_lr = scheduler_controller.last_lr
 
     if hasattr(model, 'gate_scale'):
       base_scale = getattr(model, 'gate_scale_base', None)
       target_scale = base_scale if base_scale is not None else model.gate_scale
       if gate_warmup > 0:
-        if global_step <= gate_warmup:
+        if effective_step <= gate_warmup:
           model.gate_scale.fill_(0.0)
         else:
           model.gate_scale.copy_(target_scale)
       else:
         model.gate_scale.copy_(target_scale)
 
-    fp8_step_enabled = fp8_context_factory is not None and global_step > fp8_warmup_steps
+    fp8_step_enabled = fp8_context_factory is not None and effective_step > fp8_warmup_steps
     if fp8_context_factory is not None and not fp8_activation_announced and fp8_step_enabled:
       console.print(f"[bold cyan]FP8 autocast enabled after {fp8_warmup_steps} warmup steps.[/bold cyan]")
       fp8_activation_announced = True
 
-    step_ctx = nvtx_range('train.step') if nvtx_range.enabled else contextlib.nullcontext()
-    with step_ctx:
-      if use_cuda_graphs:
+    if use_cuda_graphs:
+      if nvtx_range.enabled and nvtx_include_data:
+        with nvtx_range('data.next_batch'):
+          batch_tensors = get_next_batch()
+      else:
+        batch_tensors = get_next_batch()
+      step_ctx = nvtx_range('train.step') if nvtx_range.enabled else contextlib.nullcontext()
+      with step_ctx:
         if not first_step_completed:
           loss_tensor, step_metrics = execute_step(
             *batch_tensors,
             nvtx=nvtx_range,
             fp8_context=fp8_context_factory,
             fp8_enabled=fp8_step_enabled,
+            zero_grad=True,
+            step_optimizer=True,
+            loss_scale=1.0,
           )
           first_step_completed = True
         elif not graphs_ready:
@@ -1082,6 +1119,9 @@ def main():
               nvtx=nvtx_range,
               fp8_context=fp8_context_factory,
               fp8_enabled=fp8_step_enabled,
+              zero_grad=True,
+              step_optimizer=True,
+              loss_scale=1.0,
             )
         else:
           copy_into_static(batch_tensors, graph_state['buffers'])
@@ -1090,24 +1130,42 @@ def main():
             graph_state['graph'].replay()
           loss_tensor = graph_state['loss']
           step_metrics = graph_state['metrics']
-      else:
-        loss_tensor, step_metrics = execute_step(
-          *batch_tensors,
-          nvtx=nvtx_range,
-          fp8_context=fp8_context_factory,
-          fp8_enabled=fp8_step_enabled,
-        )
-
-    current_lr = scheduler_controller.step()
+      optimizer_step += 1
+      current_lr = scheduler_controller.step()
+    else:
+      step_metrics: Dict[str, float] = {}
+      loss_tensor = None
+      for accum_idx in range(accum_steps):
+        if nvtx_range.enabled and nvtx_include_data:
+          with nvtx_range('data.next_batch'):
+            batch_tensors = get_next_batch()
+        else:
+          batch_tensors = get_next_batch()
+        micro_ctx = nvtx_range('train.step') if nvtx_range.enabled else contextlib.nullcontext()
+        with micro_ctx:
+          loss_tensor, micro_metrics = execute_step(
+            *batch_tensors,
+            apply_clip=(accum_idx == accum_steps - 1),
+            zero_grad=(accum_idx == 0),
+            step_optimizer=(accum_idx == accum_steps - 1),
+            loss_scale=1.0 / accum_steps,
+            nvtx=nvtx_range,
+            fp8_context=fp8_context_factory,
+            fp8_enabled=fp8_step_enabled,
+          )
+        if accum_idx == accum_steps - 1:
+          step_metrics = micro_metrics if isinstance(micro_metrics, dict) else {}
+      optimizer_step += 1
+      current_lr = scheduler_controller.step()
 
     loss_val = float(loss_tensor.item())
     if not math.isfinite(loss_val):
-      message = f"Non-finite loss detected at step {global_step}."
+      message = f"Non-finite loss detected at step {optimizer_step}."
       console.print(f'[bold red]{message}[/bold red]')
       if save_dir is not None:
-        dump_path = save_dir / f'nan_batch_step_{global_step:06d}.pt'
+        dump_path = save_dir / f'nan_batch_step_{optimizer_step:06d}.pt'
         payload = {
-          'step': global_step,
+          'step': optimizer_step,
           'loss': torch.tensor(loss_val),
           'lr': current_lr,
         }
@@ -1115,18 +1173,23 @@ def main():
         console.print(f'[bold red]Stored diagnostic payload at {dump_path}[/bold red]')
       raise RuntimeError(message)
 
-    grad_norm = gradient_norm(model)
-    steps_completed = global_step - run_start_step
+    metrics = step_metrics if isinstance(step_metrics, dict) else {}
+    raw_grad_norm = metrics.pop('grad_norm_raw', None)
+    grad_norm = metrics.pop('grad_norm_clipped', None)
+    if grad_norm is None:
+      grad_norm = gradient_norm(model)
+    if raw_grad_norm is None:
+      raw_grad_norm = grad_norm
+
+    steps_completed = optimizer_step - run_start_step
     elapsed = time.time() - run_start_time
     time_per_step = elapsed / steps_completed if steps_completed > 0 else float('inf')
-    eta = format_eta(time_per_step * (total_steps - global_step))
+    eta = format_eta(time_per_step * (total_steps - optimizer_step))
     speed = format_speed(time_per_step)
-    metrics = step_metrics if isinstance(step_metrics, dict) else {}
-    raw_grad_norm = metrics.pop('grad_norm_raw', grad_norm)
 
-    if global_step % log_steps == 0 or global_step == total_steps:
+    if optimizer_step % log_steps == 0 or optimizer_step == total_steps:
       parts = [
-        f'[grey70]step {global_step}/{total_steps}[/grey70]',
+        f'[grey70]step {optimizer_step}/{total_steps}[/grey70]',
         f'[chartreuse4]loss {loss_val:.15f}[/chartreuse4]',
         f'[steel_blue]grad {grad_norm:.6f} (raw {raw_grad_norm:.6f})[/steel_blue]',
         f'[dark_orange3]lr {current_lr:.15f}[/dark_orange3]',
@@ -1147,13 +1210,13 @@ def main():
           parts.append(f'[plum4]halt Σ {halt_mean:.3f}')
       console.print(' | '.join(parts), soft_wrap=False, overflow='crop')
 
-    if args.val_every > 0 and global_step % args.val_every == 0:
+    if args.val_every > 0 and optimizer_step % args.val_every == 0:
       model.eval()
       main_eval_label = 'eval'  # Preserve legacy label formatting for the primary validation sweep.
-      main_loss = run_eval_pass(main_eval_label, val_data, pad_id, val_sample_cap, global_step)  # Execute the standard validation pass and capture its loss.
+      main_loss = run_eval_pass(main_eval_label, val_data, pad_id, val_sample_cap, optimizer_step)  # Execute the standard validation pass and capture its loss.
       for slice_info in extra_eval_slices:  # Iterate over any additional per-slice evaluation datasets configured by the user.
         slice_label = f"{main_eval_label}[{slice_info['name']}]"  # Compose a descriptive label tying the slice metrics back to the root evaluation.
-        run_eval_pass(slice_label, slice_info['data'], slice_info['pad_id'], slice_info['cap'], global_step)  # Emit per-slice validation metrics without disturbing early-stop tracking.
+        run_eval_pass(slice_label, slice_info['data'], slice_info['pad_id'], slice_info['cap'], optimizer_step)  # Emit per-slice validation metrics without disturbing early-stop tracking.
       if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.ipc_collect()
@@ -1169,7 +1232,7 @@ def main():
             scheduler_controller,
             scaler,
             cfg_serializable,
-            global_step,
+            optimizer_step,
             best_loss,
             v_loss,
             resolved_optimizer_name,
@@ -1190,7 +1253,7 @@ def main():
           scheduler_controller,
           scaler,
           cfg_serializable,
-          global_step,
+          optimizer_step,
           best_loss,
           v_loss,
           resolved_optimizer_name,
@@ -1199,7 +1262,7 @@ def main():
           resolved_loss_name,
           loss_kwargs,
         )
-        ckpt_dir = save_dir / f'step_{global_step:06d}'
+        ckpt_dir = save_dir / f'step_{optimizer_step:06d}'
         if ckpt_dir.exists():
           shutil.rmtree(ckpt_dir)
         ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -1209,7 +1272,7 @@ def main():
         enforce_checkpoint_limit(save_dir, args.checkpoint_limit)
 
       if eval_loss_patience > 0:  # Engage early-stop tracking only when patience is positive.
-        if global_step < patience_grace:  # Skip patience counting while still inside the grace window.
+        if optimizer_step < patience_grace:  # Skip patience counting while still inside the grace window.
           consecutive_eval_increase = 0  # Reset streak during grace period to avoid premature stops.
         else:  # Once the grace period ends we can evaluate trends.
           if last_eval_loss is not None and v_loss > last_eval_loss:  # Detect validation loss increase relative to previous checkpoint.
@@ -1217,8 +1280,8 @@ def main():
           else:  # Otherwise the streak resets because loss improved or first measurement.
             consecutive_eval_increase = 0  # Reset consecutive increase counter.
         last_eval_loss = v_loss  # Persist current validation loss for the next comparison.
-        if global_step >= patience_grace and consecutive_eval_increase >= eval_loss_patience:  # Check patience only after grace period elapses.
-          console.print(f"[bold red]Early stopping: validation loss increased for {eval_loss_patience} consecutive evals at step {global_step}. Halting training.[/bold red]")  # Emit clear shutdown message.
+        if optimizer_step >= patience_grace and consecutive_eval_increase >= eval_loss_patience:  # Check patience only after grace period elapses.
+          console.print(f"[bold red]Early stopping: validation loss increased for {eval_loss_patience} consecutive evals at step {optimizer_step}. Halting training.[/bold red]")  # Emit clear shutdown message.
           early_stop_triggered = True  # Signal the outer loop to terminate.
 
     if early_stop_triggered:  # Break out of the training loop when early stop fires.
@@ -1231,7 +1294,7 @@ def main():
       scheduler_controller,
       scaler,
       cfg_serializable,
-      total_steps,
+      optimizer_step,
       best_loss,
       None,
       resolved_optimizer_name,

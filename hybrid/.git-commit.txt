@@ -1,9 +1,7 @@
-Title: Integrate pytorch_optimizer into trainer
+Title: Ignore downloaded RWKV7 models
 
 Summary:
-- Added hrm_lm.training.optim_factory to centralize optimizer/scheduler/loss construction via pytorch_optimizer, including CLI/config override parsing and scheduler wrappers.
-- Refactored train.py to externalize loss computation, support new CLI flags, checkpoint scheduler metadata, and align scheduler stepping with PyTorch expectations; updated HRMLanguageModel to emit auxiliary penalties.
-- Updated default/fp8/moe configs to declare optimizer/loss/scheduler names and kwargs; expanded TRAINING.md with usage instructions and optimizer/scheduler/loss reference tables; refreshed llm.state.
+- Added models/ to .gitignore so HuggingFace checkpoints stay out of version control.
 
 Testing:
-- hybrid/venv/bin/python -m compileall hybrid/src/hrm_lm/training/train.py hybrid/src/hrm_lm/models/hybrid.py hybrid/src/hrm_lm/training/optim_factory.py
+- Not applicable (ignore rule only).

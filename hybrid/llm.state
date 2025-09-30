@@ -1745,3 +1745,9 @@
 - None besides completing the current assessment.
 
 - 2025-09-28T09:55:00+00:00: Committed pytorch_optimizer integration changes and pushed feature/pytorch-optimizer-integration branch.
+- 2025-09-28T10:05:00+00:00: Branched into feature/grad-accum and drafted gradient accumulation plan.
+- 2025-09-28T10:20:00+00:00: Implemented grad accumulation support in train.py with scheduler-aware effective steps and CLI/config plumbing.
+- 2025-09-28T10:25:00+00:00: Updated configs/documentation/checkpoint payloads to surface grad_accum_steps and revised logging.
+- 2025-09-28T10:30:00+00:00: Ran compileall on training modules post-refactor.
+- 2025-09-28T10:40:00+00:00: Parallelized prepare_dataset triple conversion using ProcessPoolExecutor tied to tokenizer threads.
+- 2025-09-28T10:45:00+00:00: Honored user override for tokenizer-num-threads without clamping to CPU count (warns if exceeding cores).

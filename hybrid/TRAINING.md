@@ -38,6 +38,7 @@ train:
 * `optim.name` selects any optimizer listed in the tables below. The library defaults are used unless you supply values under `optim.kwargs` (e.g. `{use_gc: true, weight_decay: 0.01}`).
 * `loss.name` can be `cross_entropy` for PyTorch’s built-in loss or any entry from the loss table. Additional arguments (e.g. `label_smoothing`) belong under `loss.kwargs`. The trainer flattens logits/labels to `[tokens, vocab]` and drops any positions with label `-100` before invoking the selected loss.
 * `train.lr_scheduler.name` accepts any scheduler from the scheduler table. Warmup is still controlled by `--warmup_steps`/`train.warmup_steps`; if the scheduler natively supports warmup, set it in `lr_scheduler.kwargs` instead.
+* `train.grad_accum_steps` defines gradient accumulation. A value of 1 behaves like the legacy trainer; values >1 accumulate that many micro-batches before each optimizer/scheduler update.
 
 ### CLI Overrides
 
@@ -48,12 +49,14 @@ PYTHONPATH=src python -m hrm_lm.training.train \
   --optimizer_kwargs '{"use_gc": true, "weight_decay": 0.02}' \
   --lr_scheduler warmup_stable_decay \
   --lr_scheduler_kwargs '{"num_stable_steps": 20000, "min_lr_ratio": 0.05}' \
+  --grad_accum_steps 4 \
   --loss bcefocalloss \
   --loss_kwargs '{"gamma": 1.5}'
 ```
 
 * `--optimizer`, `--lr_scheduler`, and `--loss` fall back to the YAML values when omitted.
 * `--optimizer_kwargs`, `--lr_scheduler_kwargs`, and `--loss_kwargs` accept JSON or Python dict literals. They are merged with config-provided values, letting you tweak a single hyperparameter without rewriting the entire dictionary.
+* `--grad_accum_steps` overrides `train.grad_accum_steps`; when >1 the trainer divides each micro-batch loss by the accumulation factor, accumulates gradients across micro-batches, and only clips/updates/schedules on effective optimizer steps.
 * Checkpoints store the resolved names/kwargs and restore the scheduler state on resume. If an older checkpoint lacks scheduler metadata the trainer prints a warning and restarts the schedule from step 0.
 
 ## Dataset Preparation
@@ -394,5 +397,4 @@ The tables below enumerate every optimizer, learning-rate scheduler, and loss fu
 | binarybitemperedlogisticloss | focaltverskyloss | tverskyloss |
 | bitemperedlogisticloss | jaccardloss |  |
 | diceloss | ldamloss |  |
-
 
