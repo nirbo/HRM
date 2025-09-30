@@ -1944,3 +1944,4 @@
 2025-10-01T00:18Z: Recast RWKV7 model after PEFT injection to keep adapters in bf16 (fix wind kernel dtype assert).
 2025-10-01T00:22Z: Enforced bf16 casts inside wind/fla kernel bridges to satisfy dtype assertions.
 2025-10-01T00:25Z: Patched RWKV att module reference via _patch_att_kernel so kernel overrides propagate to imported alias.
+2025-10-01T00:31Z: Recalculated RWKV7 scheduler for batch=8 accum=4 (warmup/stable/decay 31/127/62) and updated config batch sizing.
