@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple  # Provide type an
 import torch  # Core tensor library used by the encoder wrapper
 import torch.nn as nn  # Neural network building blocks for the wrapper module
 import torch.utils.cpp_extension as torch_cpp_extension  # Access cpp extension helpers for monkey patches
+from torch.utils.checkpoint import checkpoint  # Optional gradient checkpointing for memory savings
 
 logger = logging.getLogger(__name__)  # Provide module-level logger for backend selection visibility
 
@@ -389,6 +390,7 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
     self.peft_type = self.peft_config.get('type', 'none')  # Record active PEFT mode for diagnostics
     self.peft_alias = self.peft_config.get('alias', self.peft_type)  # Track provided PEFT alias (e.g. qlora -> lora)
     self.quantization = self.peft_config.get('quantization', 'none')  # Track requested quantisation mode
+    self.grad_checkpoint = bool(cfg.get('grad_checkpoint', False))
     if self.peft_type != 'none':
       adapter_r = self.peft_config.get(self.peft_type, {}).get('r', 'n/a')
       logger.info('RWKV7 PEFT enabled: type=%s alias=%s r=%s', self.peft_type, self.peft_alias, adapter_r)
@@ -600,7 +602,12 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
     v_first = torch.zeros_like(token_embeddings)  # Initialize value cache placeholder consumed by the first block
     hidden = token_embeddings  # Seed hidden state with initial embeddings before block stack execution
     for block in self.model.blocks:  # Iterate through RWKV-7 blocks to accumulate sequential features
-      hidden, v_first = block.forward_normal(hidden, v_first, attention_mask=mask)  # Execute attention + FFN block using provided mask
+      if self.grad_checkpoint:
+        def block_forward(h: torch.Tensor, vf: torch.Tensor, blk=block, m=mask):
+          return blk.forward_normal(h, vf, attention_mask=m)
+        hidden, v_first = checkpoint(block_forward, hidden, v_first, use_reentrant=False)
+      else:
+        hidden, v_first = block.forward_normal(hidden, v_first, attention_mask=mask)  # Execute attention + FFN block using provided mask
     hidden = self.model.ln_out(hidden)  # Apply final layer norm to produce stable hidden representations
     return hidden, None  # Expose hidden states and signal absence of auxiliary losses
 

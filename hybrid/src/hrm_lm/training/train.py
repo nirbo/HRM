@@ -522,6 +522,7 @@ def main():
   parser.add_argument('--max_val_samples', type=int, default=0, help='Limit the number of validation samples evaluated per checkpoint (0 = use all).')  # Allow partial validation sweeps for speed.
   parser.add_argument('--hrm_gate_warmup_steps', type=int, default=0, help='Number of steps to keep the HRM bridge gate closed before enabling it (0 = immediate).')  # Smoothly introduce HRM conditioning after language warmup.
   parser.add_argument('--lr_min_ratio', type=float, default=0.0, help='Lower bound multiplier applied to decay-based LR schedules (0 keeps the exact schedule shape).')  # Prevent cosine/linear schedules from decaying below a fixed floor.
+  parser.add_argument('--grad_checkpoint', action='store_true', help='Enable gradient checkpointing for the encoder to trade compute for memory.')
   args = parser.parse_args()
 
   optimizer_override = args.optimizer.strip() if isinstance(args.optimizer, str) and args.optimizer else None
@@ -589,6 +590,12 @@ def main():
     raise ValueError('max sequence length must be positive')
   cfg.train.seq_len = effective_seq_len
   cfg.train.tgt_len = effective_seq_len
+  if hasattr(cfg.model, 'encoder') and hasattr(cfg.model.encoder, 'max_seq_len'):
+    cfg.model.encoder.max_seq_len = effective_seq_len
+  if hasattr(cfg.model, 'decoder') and hasattr(cfg.model.decoder, 'max_seq_len'):
+    cfg.model.decoder.max_seq_len = effective_seq_len
+  if args.grad_checkpoint:
+    cfg.model.encoder.grad_checkpoint = True
 
   base_lr = args.learning_rate if args.learning_rate is not None else cfg.optim.lr
   if base_lr <= 0:

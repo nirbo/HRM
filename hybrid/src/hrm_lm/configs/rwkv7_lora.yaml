@@ -12,6 +12,7 @@ model:
     head_size_a: 64
     head_size_divisor: 8
     kernel_preference: wind_longhead
+    grad_checkpoint: false
     peft:
       type: lora         # options: none | lora | qlora | pissa | disha
       quantization: none # set to nf4/int8/fp8/etc for QLoRA-style training

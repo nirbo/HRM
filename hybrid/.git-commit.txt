@@ -1,11 +1,10 @@
-Title: Disable torch.compile for RWKV7 and align config with 512-token runs
+Title: Add gradient checkpointing support for RWKV7 training
 
 Summary:
-- force TORCH_COMPILE_DISABLE / PYTORCH_COMPILE_DISABLE in RWKV7 backend env setup and default to wind_longhead kernel with 512 ctx.
-- shrink encoder/decoder max_seq_len to 512 and update scheduler totals for 7,899 train samples.
-- log investigation notes in llm.state (pre-forward memory ~9 GB) indicating LoRA activations drive peak usage.
+- expose --grad_checkpoint CLI flag and propagate to config; tighten encoder/decoder seq_len syncing.
+- wire RWKV7 encoder to optionally wrap blocks with torch.utils.checkpoint (use_reentrant=False) for memory relief.
+- document new toggle and dataset settings in rwkv7_lora.yaml (grad_checkpoint:false default, ctx=512).
+- log activation memory note in llm.state.
 
 Testing:
-- PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/models/rwkv7_backend.py
-- PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/training/train.py
-- PYTHONPATH=src timeout 30s ./venv/bin/python -m hrm_lm.training.train --config src/hrm_lm/configs/rwkv7_lora.yaml --dataset datasets/openai-gsm8k-socratic/ --batch_size 8 --grad_accum_steps 4 --steps 267 --learning_rate 0.0002 --warmup_steps 31 --lr_min_ratio 0.02 --grad_clip 1.5 --val_every 100 --run_name rwkv7-hrm-gsm8k --checkpoint_limit 3 --mixed_precision bf16 --eval_batch_size 8 --log_steps 1 --dataset_workers 30 --save_best_model --max_seq_len 512 --max_val_samples 53 --eval_loss_patience 6 --patience_grace_steps 200 --hrm_gate_warmup_steps 100 (expected timeout after OOM; used for memory inspection)
+- PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/models/rwkv7_backend.py src/hrm_lm/training/train.py
