@@ -1751,3 +1751,66 @@
 - 2025-09-28T10:30:00+00:00: Ran compileall on training modules post-refactor.
 - 2025-09-28T10:40:00+00:00: Parallelized prepare_dataset triple conversion using ProcessPoolExecutor tied to tokenizer threads.
 - 2025-09-28T10:45:00+00:00: Honored user override for tokenizer-num-threads without clamping to CPU count (warns if exceeding cores).
+
+## Session 2025-09-28T11:35Z
+### Original Task Description
+- Evaluate whether we can leverage Unsloth (or similar optimized fine-tuning tooling) with the new RWKV-7 base integration for surgical edits and fine-tuning.
+
+### Plan
+1. Reconfirm current repo/task context and constraints (statefile, AGENTS.md, tooling notes).
+2. Investigate Unsloth’s model/backbone support and assess compatibility or gaps with RWKV-7 checkpoints.
+3. Summarize feasibility, required adaptations, and recommended next steps for integrating Unsloth (or alternatives) with RWKV.
+
+### Action Log
+- 2025-09-28T11:36:00+00:00: Reviewed `llm.state` header to refresh prior sessions and outstanding tasks.
+- 2025-09-28T11:36:30+00:00: Re-read `AGENTS.md` header to reconfirm critical rules for current work.
+
+- 2025-09-28T11:37:00+00:00: Initial attempt to fetch Unsloth documentation failed (tool call error logged).
+- 2025-09-28T11:37:15+00:00: Retried documentation fetch; obtained Unsloth README for capability review.
+- 2025-09-28T11:37:45+00:00: Queried Unsloth docs for "RWKV" support references (no direct matches).
+- 2025-09-28T11:40:30+00:00: Consolidated Unsloth vs RWKV findings and prepared guidance notes.
+- 2025-09-28T11:42:10+00:00: Pulled GitBook sitemap and raw docs for Unsloth feature verification; no RWKV pages found.
+- 2025-09-28T11:42:45+00:00: Scraped Unsloth README/unsloth_zoo repo for "rwkv" references (none present as of current release).
+- 2025-09-28T11:44:10+00:00: Captured user decision to proceed with BlinkDL RWKV tooling for fine-tuning path.
+- 2025-09-28T11:45:30+00:00: Established research plan for RWKV ecosystem audit and drafted steps via plan tool.
+- 2025-09-28T11:46:30+00:00: Gathered primary RWKV resources (RWKV-LM, CUDA kernels, ChatRWKV, Runner) via README inspection.
+- 2025-09-28T11:47:10+00:00: Queried RWKV GitHub org repositories to catalogue auxiliary tooling (onnx, infctx trainer, tokenizer bindings).
+- 2025-09-28T11:47:50+00:00: Retrieved RWKV-PEFT documentation detailing LoRA/DiSHA adapters and hardware requirements.
+- 2025-09-28T11:49:20+00:00: Authored RWKV.md summarizing training, inference, tokenizer, and community tooling with URLs.
+- 2025-09-28T11:49:40+00:00: Marked research plan complete after documenting findings.
+- 2025-09-28T11:51:10+00:00: Defined new plan for cloning RWKV repos, environment setup script, and trainer feature audit.
+- 2025-09-28T11:52:40+00:00: Added RWKV repository entries to ../.gitignore to keep clones out of version control.
+- 2025-09-28T11:53:20+00:00: Cloned BlinkDL/RWKV-LM (depth 1) into workspace.
+- 2025-09-28T11:53:40+00:00: Cloned BlinkDL/RWKV-CUDA (depth 1) for kernel reference.
+- 2025-09-28T11:54:00+00:00: Cloned RWKV/RWKV-infctx-trainer for long-context training reference.
+- 2025-09-28T11:54:20+00:00: Cloned JL-er/RWKV-PEFT for adapter techniques (LoRA/DiSHA).
+- 2025-09-28T11:54:45+00:00: Cloned josStorer/RWKV-Runner for inference tooling review.
+- 2025-09-28T11:55:10+00:00: Cloned RWKV/rwkv.cpp for GGML-based inference reference.
+- 2025-09-28T11:55:30+00:00: Cloned BlinkDL/ChatRWKV to study chat/inference integrations.
+- 2025-09-28T11:55:50+00:00: Marked cloning step complete in execution plan.
+- 2025-09-28T11:56:20+00:00: Authored scripts/setup_rwkv_env.sh with venv creation, pip installs, and RWKV repo sync logic.
+- 2025-09-28T11:56:40+00:00: Updated plan tracker after adding setup script.
+- 2025-09-28T11:57:30+00:00: Reviewed RWKV-LM train_temp scripts to map default training capabilities.
+- 2025-09-28T11:57:50+00:00: Completed RWKV trainer feature comparison step in plan tracker.
+- 2025-09-28T11:58:20+00:00: Adjusted .gitignore patterns to target hybrid-local RWKV clones.
+- 2025-09-28T11:59:10+00:00: Established RWKV integration plan (strategy, loader prototype, loop assessment).
+- 2025-09-28T12:00:10+00:00: Drafted integration strategy: wrap RWKV-7 blocks as new LMEncoder backend, reuse official weight init, adapt tokenizer/ctx settings, and keep our trainer for logging/checkpoint controls.
+- 2025-09-28T12:00:40+00:00: Installed rwkv 0.8.30 wheel inside venv for runtime model wrappers.
+- 2025-09-28T12:01:30+00:00: Documented RWKV7 loader interface in RWKV.md outlining reuse of RWKV-PEFT modules and checkpoint mapping.
+- 2025-09-28T12:02:10+00:00: Captured trainer gap analysis in RWKV.md (checkpoint cadence, eval/early stop, LR groups, dataset format).
+- 2025-09-28T12:02:45+00:00: Added RWKV7 encoder wrapper module under src/hrm_lm/models/rwkv7_backend.py using RWKV-PEFT building blocks.
+- 2025-09-28T12:03:05+00:00: Updated LMEncoder to recognize 'rwkv7' backend and route to the new wrapper while keeping logging semantics.
+- 2025-09-28T12:03:25+00:00: Relaxed local .gitignore to re-include src/hrm_lm/models/ after introducing RWKV wrapper.
+- 2025-09-28T12:03:40+00:00: Ran ./venv/bin/python -m compileall on encoder and RWKV backend to validate syntax.
+- 2025-09-28T12:04:10+00:00: Extended RWKV.md with integration instructions for encoder.backend=rwkv7 and default checkpoint handling.
+### Pending Steps
+- None; ready to report findings.
+
+### Current Summary
+- Preliminary conclusion: Unsloth tooling targets HuggingFace Transformer-style models; RWKV-7 checkpoint lacks compatible wrappers, so direct adoption would require substantial adaptation.
+- Doc/code search (README, sitemap, repo) shows no published RWKV integration despite marketing claims of broad support.
+- Decision: adopt BlinkDL RWKV-LM tooling as the baseline for RWKV-7 + HRM fine-tuning, while keeping our trainer for HRM-specific experiments.
+- Compiled RWKV.md listing training, inference, tokenizer, and community resources to guide implementation.
+- RWKV7 encoder wrapper now available and selected via encoder.backend=rwkv7 while preserving HRM trainer controls.
+### Open Issues
+- Finalize RWKV7 training integration: replicate per-parameter LR groups, wire dataset loader expectations, and add smoke tests before enabling fine-tuning.

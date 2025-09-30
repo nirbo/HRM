@@ -1,6 +1,7 @@
 datasets/
 runs/
 models/
+!src/hrm_lm/models/
+!src/hrm_lm/models/**
 __pycache__/
 .pytest_cache/
-

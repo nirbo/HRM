@@ -1,7 +1,6 @@
-Title: Ignore downloaded RWKV7 models
+RWKV-7 backend integration groundwork
 
-Summary:
-- Added models/ to .gitignore so HuggingFace checkpoints stay out of version control.
-
-Testing:
-- Not applicable (ignore rule only).
+- add setup script that prepares venv and clones required RWKV upstream repos
+- allow tracking of new backend module by adjusting gitignore rules
+- introduce RWKV7 encoder wrapper and wire it into LMEncoder
+- document integration steps and log progress in statefile

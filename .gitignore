@@ -172,3 +172,12 @@ runs/
 uv.lock
 redpajama-data/
 RWKV-CUDA/
+
+# Local RWKV upstream repositories
+hybrid/RWKV-LM/
+hybrid/RWKV-CUDA/
+hybrid/RWKV-PEFT/
+hybrid/RWKV-infctx-trainer/
+hybrid/RWKV-Runner/
+hybrid/rwkv.cpp/
+hybrid/ChatRWKV/
