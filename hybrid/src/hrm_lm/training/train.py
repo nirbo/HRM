@@ -16,7 +16,7 @@ import warnings
 import torch
 import torch.nn as nn
 from torch.optim import Optimizer
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, ListConfig, OmegaConf
 from rich.console import Console
 
 from hrm_lm.data.synthetic import build_synthetic_dataset, pad_batch
@@ -636,7 +636,10 @@ def main():
         artifact_sources.append((tok_path, tok_path.name))
 
     extra_eval_cfg_raw = getattr(cfg.train, 'extra_eval_slices', [])  # Retrieve user-defined extra validation slice configuration.
-    extra_eval_cfg = OmegaConf.to_container(extra_eval_cfg_raw, resolve=True)  # Convert OmegaConf structures into plain Python containers for iteration.
+    if isinstance(extra_eval_cfg_raw, (ListConfig, DictConfig)):  # Convert OmegaConf containers into plain Python objects for iteration.
+      extra_eval_cfg = OmegaConf.to_container(extra_eval_cfg_raw, resolve=True)
+    else:
+      extra_eval_cfg = extra_eval_cfg_raw  # Accept native Python lists/dicts as-is.
     if isinstance(extra_eval_cfg, list):  # Proceed only when the configuration resolves to a list of slice descriptors.
       for slice_cfg in extra_eval_cfg:  # Traverse each configured validation slice entry.
         if not isinstance(slice_cfg, dict):  # Ensure the entry is a dictionary describing the slice parameters.

@@ -1937,3 +1937,7 @@
 2025-09-30T23:37Z: Added RWKVTokenizer module and updated dataset prep script to load rwkv_vocab JSON with special-token fallbacks.
 2025-09-30T23:40Z: Patched chat_template.py regex and syntax so module imports successfully for dataset prep.
 2025-09-30T23:45Z: Regenerated GSM8K (socratic) triples with RWKV7 tokenizer JSON (train=8442, val=184, test=166).
+2025-10-01T00:02Z: Reviewing requested training schedule (441 total steps) to update scheduler config accordingly.
+2025-10-01T00:05Z: Updated src/hrm_lm/configs/moe.yaml scheduler to 62/254/125 steps (sum 441) and bumped train/eval batch size to 16 to match planned CLI overrides.
+2025-10-01T00:08Z: Reverted unintended scheduler tweak in moe.yaml and applied 62/254/125 schedule + batch_size=eval=16 to src/hrm_lm/configs/rwkv7_lora.yaml (grad_accum_steps=1).
+2025-10-01T00:12Z: Patched train.py to accept native list/dict for extra_eval_slices before calling OmegaConf.to_container; compileall succeeded.
