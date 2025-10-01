@@ -13,15 +13,15 @@ model:
     head_size_divisor: 8
     kernel_preference: wind_longhead
     grad_checkpoint: false
-    detach_output: true
+    detach_output: false
     peft:
-      type: none         # options: none | lora | qlora | pissa | disha
-      quantization: none # set to nf4/int8/fp8/etc for QLoRA-style training
+      type: qlora         # options: none | lora | qlora | pissa | disha
+      quantization: fp4 # set to nf4/int8/fp8/etc for QLoRA-style training
       freeze_non_peft: true
       train_embeddings: false
       train_head: false
       train_layer_norms: false
-      train_parts: []
+      train_parts: ["time", "ln"]
       lora:
         r: 8
         alpha: 32
@@ -44,10 +44,10 @@ model:
     d_model: 2048
     h_len: 8
     l_len: 64
-    h_layers: 6
-    l_layers: 6
-    h_cycles: 6
-    l_steps: 4
+    h_layers: 4
+    l_layers: 4
+    h_cycles: 4
+    l_steps: 2
     approx_grad: one_step
     use_halting: true
     halting_weight: 0.05
@@ -56,15 +56,15 @@ model:
     deep_supervision: false
     ds_weight: 0.2
     gate_scale: 1.0
-    gate_bias: 0.0
+    gate_bias: 0.75
     trainable: true
 bridge:
   type: prefix
   prefix_len: 16
   trainable: true
 optim:
-  name: adamw
-  lr: 1.5e-4
+  name: came
+  lr: 0.00015
   weight_decay: 0.0
   betas: [0.9, 0.95]
   kwargs: {}
