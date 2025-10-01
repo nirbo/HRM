@@ -1,8 +1,8 @@
-Title: Add encoder detach option and default to HRM-only fine-tuning
+Title: Ensure RWKV weights stay frozen when PEFT is disabled
 
 Summary:
-- allow HRMLanguageModel to detach encoder outputs before feeding HRM, controlled via encoder_cfg['detach_output'].
-- switch rwkv7_lora defaults to peft.type=none and enable hrm/bridge training while detaching encoder outputs by default.
+- move requires_grad_ freeze ahead of early return in RWKV7Encoder._apply_peft so peft.type=none still freezes base weights.
+- note change in statefile (trainable params now ~697M with HRM trainable).
 
 Testing:
-- PYTHONPATH=src timeout 60s ./venv/bin/python -m hrm_lm.training.train --config src/hrm_lm/configs/rwkv7_lora.yaml --dataset datasets/openai-gsm8k-socratic/ --batch_size 2 --grad_accum_steps 16 --steps 5 --learning_rate 0.0002 --warmup_steps 31 --lr_min_ratio 0.02 --grad_clip 1.5 --val_every 200 --run_name mem-check3 --checkpoint_limit 1 --mixed_precision bf16 --eval_batch_size 2 --log_steps 1 --dataset_workers 4 --save_best_model --max_seq_len 512 --max_val_samples 16 --eval_loss_patience 6 --patience_grace_steps 50 --hrm_gate_warmup_steps 100 --grad_checkpoint --optimizer tiger --override model.encoder.kernel_preference=fla_chunk
+- PYTHONPATH=src ./venv/bin/python -m hrm_lm.training.train --config src/hrm_lm/configs/rwkv7_lora.yaml --dataset datasets/openai-gsm8k-socratic/ --batch_size 2 --grad_accum_steps 16 --steps 5 --learning_rate 0.0002 --warmup_steps 31 --lr_min_ratio 0.02 --grad_clip 1.5 --val_every 200 --run_name mem-check3 --checkpoint_limit 1 --mixed_precision bf16 --eval_batch_size 2 --log_steps 1 --dataset_workers 4 --save_best_model --max_seq_len 512 --max_val_samples 16 --eval_loss_patience 6 --patience_grace_steps 50 --hrm_gate_warmup_steps 100 --grad_checkpoint --optimizer tiger --override model.encoder.kernel_preference=fla_chunk

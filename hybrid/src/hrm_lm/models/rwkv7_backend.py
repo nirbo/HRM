@@ -295,12 +295,13 @@ class RWKV7Encoder(nn.Module):  # Define encoder wrapper that exposes RWKV-7 thr
     peft_type = peft_cfg['type']
     quant_type = peft_cfg['quantization']
     freeze = bool(peft_cfg.get('freeze_non_peft', True))
-    if peft_type == 'none' and quant_type == 'none':
-      return
 
     model = self.model
     if freeze:
       model.requires_grad_(False)
+
+    if peft_type == 'none' and quant_type == 'none':
+      return
 
     if peft_cfg.get('train_embeddings', True) and hasattr(model, 'emb'):
       model.emb.weight.requires_grad = True
