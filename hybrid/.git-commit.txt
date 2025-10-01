@@ -1,8 +1,10 @@
-Title: Ensure RWKV weights stay frozen when PEFT is disabled
+Title: Stabilize generation masks and tokenizer loading
 
 Summary:
-- move requires_grad_ freeze ahead of early return in RWKV7Encoder._apply_peft so peft.type=none still freezes base weights.
-- note change in statefile (trainable params now ~697M with HRM trainable).
+- expand inference tokenizer loader to read RWKV vocab artifacts and sanitize logits/probabilities before sampling.
+- switch encoder/decoder attention masks to boolean and convert transformer causal mask to float -inf values to avoid NaNs.
+- update rwkv7_lora defaults (lr scheduler, gate bias/scale, halting weight) and refresh llm.state tracking entries.
 
 Testing:
-- PYTHONPATH=src ./venv/bin/python -m hrm_lm.training.train --config src/hrm_lm/configs/rwkv7_lora.yaml --dataset datasets/openai-gsm8k-socratic/ --batch_size 2 --grad_accum_steps 16 --steps 5 --learning_rate 0.0002 --warmup_steps 31 --lr_min_ratio 0.02 --grad_clip 1.5 --val_every 200 --run_name mem-check3 --checkpoint_limit 1 --mixed_precision bf16 --eval_batch_size 2 --log_steps 1 --dataset_workers 4 --save_best_model --max_seq_len 512 --max_val_samples 16 --eval_loss_patience 6 --patience_grace_steps 50 --hrm_gate_warmup_steps 100 --grad_checkpoint --optimizer tiger --override model.encoder.kernel_preference=fla_chunk
+- PYTHONPATH=src ./venv/bin/python -m compileall src/hrm_lm/inference/generate.py
+- PYTHONPATH=src TORCH_CUDA_ARCH_LIST=12.0+PTX ./venv/bin/python -m hrm_lm.inference.generate --config runs/rwkv7-hrm-gsm8k/best-model/config.yaml --checkpoint runs/rwkv7-hrm-gsm8k/best-model/model.pt --prompt "Sanity" --chat_template canonical --max_new_tokens 32 --device cuda

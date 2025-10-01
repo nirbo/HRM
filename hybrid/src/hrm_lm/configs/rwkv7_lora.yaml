@@ -25,7 +25,7 @@ model:
       lora:
         r: 8
         alpha: 32
-        dropout: 0.00
+        dropout: 0.01
         load_path: ""    # optional path to resume LoRA weights
       pissa:
         r: 16
@@ -50,23 +50,23 @@ model:
     l_steps: 2
     approx_grad: one_step
     use_halting: true
-    halting_weight: 0.05
+    halting_weight: 0.02
     halting_target: 1.0
     out_dim: 2048
     deep_supervision: false
     ds_weight: 0.2
-    gate_scale: 1.0
-    gate_bias: 0.75
+    gate_scale: 0.3
+    gate_bias: 0.2
     trainable: true
 bridge:
   type: prefix
   prefix_len: 16
   trainable: true
 optim:
-  name: came
+  name: adamw
   lr: 0.00015
   weight_decay: 0.0
-  betas: [0.9, 0.95]
+  betas: [0.9, 0.98]
   kwargs: {}
 loss:
   name: cross_entropy
@@ -84,8 +84,8 @@ train:
   batch_size: 2
   eval_batch_size: 2
   grad_accum_steps: 16
-  seq_len: 256
-  tgt_len: 64
+  seq_len: 1024
+  tgt_len: 1024
   mixed_precision: bf16
   enable_tf32: true
   use_cuda_graphs: false

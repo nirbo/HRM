@@ -12,6 +12,7 @@ from tokenizers import Tokenizer  # load Hugging Face tokenizer files
 
 from hrm_lm.models.hybrid import HRMLanguageModel  # model type hints
 from hrm_lm.training.train import make_model  # model builder
+from hrm_lm.tokenizers import RWKVTokenizer, load_rwkv_vocab  # RWKV vocabulary utilities
 from hrm_lm.data.simple_tokenizer import BOS_ID, EOS_ID, SimpleTokenizer  # tokenizer utilities
 from hrm_lm.data.synthetic import build_synthetic_dataset  # synthetic tokenizer builder
 from chat_template import render_template  # chat template helpers
@@ -98,18 +99,111 @@ class HFTokenizerAdapter:
     filtered = [idx for idx in ids if not (skip_specials and idx in specials)]  # optionally filter specials
     return self._tokenizer.decode(filtered)  # decode ids back to text
 
+
+class RWKVTokenizerAdapter:
+  def __init__(self, tokenizer_path: Path, meta: Optional[dict]):
+    vocab_items = load_rwkv_vocab(tokenizer_path)  # load RWKV vocabulary entries from disk
+    self._tokenizer = RWKVTokenizer(vocab_items)  # instantiate RWKV tokenizer with the loaded entries
+    self._id_to_bytes = {token_id: token_bytes for token_id, token_bytes in vocab_items}  # cache id-to-bytes mapping for decoding
+    metadata = meta or {}  # normalize metadata dictionary for special-token overrides
+    pad_meta = metadata.get('pad_id')  # extract optional pad id override
+    bos_meta = metadata.get('bos_id')  # extract optional BOS id override
+    eos_meta = metadata.get('eos_id')  # extract optional EOS id override
+    try:
+      self.pad_id = int(pad_meta)  # coerce pad id override to integer when provided
+    except (TypeError, ValueError):
+      self.pad_id = self._tokenizer.pad_token_id  # fall back to tokenizer default pad id
+    try:
+      self.bos_id = int(bos_meta)  # coerce BOS id override to integer when provided
+    except (TypeError, ValueError):
+      self.bos_id = self._tokenizer.bos_token_id  # fall back to tokenizer default BOS id
+    try:
+      self.eos_id = int(eos_meta)  # coerce EOS id override to integer when provided
+    except (TypeError, ValueError):
+      self.eos_id = self._tokenizer.eos_token_id  # fall back to tokenizer default EOS id
+
+  def encode(self, text: str, add_specials: bool = True):
+    ids = self._tokenizer.encode(text)  # tokenize text into RWKV token ids
+    if not add_specials:  # respect add_specials flag
+      return ids  # return raw token sequence
+    sequence = []  # assemble sequence with special tokens
+    if self.bos_id is not None:  # optionally prepend BOS token
+      sequence.append(self.bos_id)  # add BOS id to sequence
+    sequence.extend(ids)  # append base token ids
+    if self.eos_id is not None:  # optionally append EOS token
+      sequence.append(self.eos_id)  # add EOS id to sequence
+    return sequence  # return finalized token id sequence
+
+  def decode(self, ids, skip_specials: bool = True):
+    specials = {token_id for token_id in (self.pad_id, self.bos_id, self.eos_id) if token_id is not None}  # collect special ids for filtering
+    buffer = bytearray()  # accumulate decoded byte stream
+    for raw_id in ids:  # iterate requested token ids
+      token_id = int(raw_id)  # normalize token id to python int
+      if skip_specials and token_id in specials:  # optionally skip special tokens
+        continue  # ignore this token id
+      token_bytes = self._id_to_bytes.get(token_id)  # fetch raw bytes for token id
+      if token_bytes is None:  # guard against missing vocabulary entries
+        continue  # skip unknown ids
+      buffer.extend(token_bytes)  # append token bytes to output buffer
+    return buffer.decode('utf-8', errors='replace')  # decode accumulated bytes into utf-8 string
+
+
+def _build_tokenizer_adapter(candidate_path: Path, meta: Optional[dict]):
+  if not candidate_path.exists():  # ensure candidate file is present
+    raise FileNotFoundError(f'tokenizer artifact {candidate_path} not found')  # surface missing artifacts explicitly
+  hf_error: Optional[Exception] = None  # track huggingface loader failure for diagnostics
+  try:
+    return HFTokenizerAdapter(candidate_path, meta)  # prefer huggingface tokenizer loader when compatible
+  except Exception as exc:  # capture huggingface loader errors for reuse
+    hf_error = exc  # remember huggingface loader exception for later reporting
+  try:
+    return RWKVTokenizerAdapter(candidate_path, meta)  # attempt RWKV vocabulary loading next
+  except Exception as exc:  # capture RWKV loader errors
+    message = f'Failed to load tokenizer from {candidate_path}: HF error={hf_error}; RWKV error={exc}'  # compose aggregated diagnostic message
+    raise RuntimeError(message) from exc  # raise combined error with context for troubleshooting
+
+
 def load_artifact_tokenizer(checkpoint_dir: Optional[Path]):
   if checkpoint_dir is None:  # no checkpoint provided
     return None  # nothing to load
-  tokenizer_path = checkpoint_dir / 'tokenizer.json'  # locate tokenizer artifact
-  if not tokenizer_path.exists():  # artifact missing
-    return None  # skip loading
+  meta_data = None  # placeholder for parsed metadata
   meta_path = checkpoint_dir / 'meta.json'  # locate metadata snapshot
-  meta_data = None  # default metadata
   if meta_path.exists():  # metadata available
     with meta_path.open('r', encoding='utf-8') as handle:  # open metadata file
-      meta_data = json.load(handle)  # parse metadata JSON
-  return HFTokenizerAdapter(tokenizer_path, meta_data)  # return tokenizer adapter
+      try:
+        meta_data = json.load(handle)  # parse metadata JSON payload
+      except json.JSONDecodeError as exc:  # handle malformed metadata
+        raise RuntimeError(f'Failed to parse {meta_path}: {exc}') from exc  # surface metadata parsing errors
+  candidates = []  # collect candidate tokenizer files to inspect
+  for name in ('tokenizer.json', 'tokenizer_rwkv7_vocab.json', 'tokenizer_rwkv_vocab.json'):  # enumerate common artifact filenames
+    candidates.append((checkpoint_dir / name, False))  # append optional candidate path
+  if isinstance(meta_data, dict):  # honor tokenizer pointer from metadata when available
+    token_file = meta_data.get('tokenizer_file')  # extract tokenizer file hint
+    if token_file:  # ensure hint is not empty
+      meta_candidate = Path(str(token_file))  # normalize hint to Path
+      if not meta_candidate.is_absolute():  # resolve relative paths w.r.t. checkpoint directory
+        meta_candidate = (checkpoint_dir / meta_candidate).resolve()  # convert relative path to absolute
+      candidates.append((meta_candidate, True))  # treat metadata-specified tokenizer as required
+  seen = set()  # avoid reprocessing duplicate paths
+  errors = []  # collect loading errors for diagnostics
+  for candidate_path, required in candidates:  # iterate candidate tokenizer paths
+    resolved = Path(candidate_path).resolve()  # normalize candidate path to absolute form
+    if resolved in seen:  # skip duplicates
+      continue  # move to next candidate
+    seen.add(resolved)  # mark path as visited
+    if not resolved.exists():  # handle missing files
+      if required:  # metadata-promised tokenizer missing
+        errors.append(f'{resolved}: file not found')  # record missing required artifact
+      continue  # examine next candidate
+    try:
+      return _build_tokenizer_adapter(resolved, meta_data)  # attempt to construct tokenizer adapter from artifact
+    except Exception as exc:  # record loading failures
+      errors.append(f'{resolved}: {exc}')  # store failure details for aggregated error
+      continue  # continue evaluating other candidates
+  if errors:  # check if any candidate attempts failed
+    joined = '; '.join(errors)  # join error messages for readability
+    raise RuntimeError(f'Failed to load tokenizer artifacts: {joined}')  # surface aggregated failure
+  return None  # fall back to synthetic/simple tokenizers when no artifacts available
 
 
 
@@ -117,7 +211,9 @@ def _sample_next_token(logits: torch.Tensor, temperature: float, top_p: float) -
   if temperature <= 0:
     temperature = 1e-5  # prevent divide-by-zero
   logits = logits / temperature
+  logits = torch.nan_to_num(logits, nan=0.0, posinf=1e4, neginf=-1e4)  # stabilise logits before softmax
   probs = torch.softmax(logits, dim=-1)
+  probs = torch.nan_to_num(probs, nan=0.0)  # guard against residual NaNs from numerical issues
   if top_p < 1.0:
     sorted_probs, sorted_indices = torch.sort(probs, descending=True)
     cumulative = torch.cumsum(sorted_probs, dim=-1)
@@ -149,9 +245,9 @@ def generate(model: HRMLanguageModel, tokenizer, prompt: str, max_new_tokens: in
     dec_seed = [bos] if bos is not None else []
   dec = torch.tensor([dec_seed], dtype=torch.long, device=dev)  # seed decoder with prompt tokens
   base_len = dec.size(1)  # remember prompt length for continuation slicing
-  enc_mask = (enc != pad).long()  # encoder mask
+  enc_mask = (enc != pad).bool()  # encoder mask as boolean mask
   for _ in range(max_new_tokens):  # iterate decoding steps
-    dec_mask = (dec != pad).long()  # decoder mask
+    dec_mask = (dec != pad).bool()  # decoder mask as boolean mask
     out = model(enc, dec, enc_attn_mask=enc_mask, dec_attn_mask=dec_mask)  # forward pass
     logits = out['logits'][:, -1, :]  # get last-step logits
     next_token = _sample_next_token(logits, temperature=temperature, top_p=top_p)  # stochastic choice

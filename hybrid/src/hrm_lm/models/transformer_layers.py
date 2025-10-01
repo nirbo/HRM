@@ -239,5 +239,9 @@ class TransformerDecoder(nn.Module):
 
   def forward(self, tgt, memory, tgt_key_padding_mask=None, memory_key_padding_mask=None):
     L = tgt.size(1)
-    causal = torch.triu(torch.ones(L, L, device=tgt.device, dtype=torch.bool), diagonal=1)
+    device = tgt.device
+    dtype = tgt.dtype if tgt.dtype.is_floating_point else torch.float32
+    causal = torch.zeros(L, L, device=device, dtype=dtype)
+    causal.masked_fill_(torch.triu(torch.ones(L, L, device=device, dtype=torch.bool), diagonal=1), float('-inf'))
+    causal = causal.to(tgt.dtype) if causal.dtype != tgt.dtype else causal
     return self.dec(tgt, memory, tgt_mask=causal, tgt_key_padding_mask=tgt_key_padding_mask, memory_key_padding_mask=memory_key_padding_mask)
