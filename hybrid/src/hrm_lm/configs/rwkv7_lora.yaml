@@ -75,11 +75,11 @@ train:
   lr_scheduler:
     name: warmup_stable_decay
     kwargs:
-      num_warmup_steps: 31       # ~1000 raw micro-steps / effective batch 32
-      num_stable_steps: 137      # adjusted for batch_size=2 & grad_accum=16 (total optimizer steps ≈247)
-      num_decay_steps: 79        # completes 247 optimizer steps (31 + 137 + 79)
-      cooldown_type: '1-sqrt'    # default; cosine also works if you prefer smoother tail
-      min_lr_ratio: 0.02         # floor for the tail (tweak as needed)
+      num_warmup_steps: 200
+      num_stable_steps: 1500
+      num_decay_steps: 300
+      cooldown_type: '1-sqrt'
+      min_lr_ratio: 0.1
   seed: 42
   batch_size: 2
   eval_batch_size: 2

@@ -14,11 +14,47 @@ from hrm_lm.models.hybrid import HRMLanguageModel  # model type hints
 from hrm_lm.training.train import make_model  # model builder
 from hrm_lm.data.simple_tokenizer import BOS_ID, EOS_ID, SimpleTokenizer  # tokenizer utilities
 from hrm_lm.data.synthetic import build_synthetic_dataset  # synthetic tokenizer builder
+from chat_template import render_template  # chat template helpers
 
 if 'PYTORCH_CUDA_ALLOC_CONF' not in os.environ:
   os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
 DEFAULT_DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'  # prefer GPU when available for generation
+
+
+def apply_chat_template(prompt: str, template: Optional[str], system: Optional[str]) -> str:
+  """Format ``prompt`` using the requested chat template.
+
+  Args:
+    prompt: Raw user prompt text.
+    template: Either ``None``, the literal string ``'canonical'``, or a path to a
+      template file.
+    system: Optional system instruction to include when rendering canonical
+      templates.
+
+  Returns:
+    A formatted prompt string suitable for tokenisation.
+  """
+  if not template:
+    return prompt
+
+  if template.lower() == 'canonical':
+    messages = []
+    if system:
+      messages.append({'role': 'system', 'content': system})
+    messages.append({'role': 'user', 'content': prompt})
+    rendered = render_template({'messages': messages}, api='openai-chat')
+    # Open-ended assistant block so generation appends the reply.
+    return f"{rendered}\n\n<<ASSISTANT>>\n"
+
+  template_path = Path(template)
+  if not template_path.exists():
+    raise FileNotFoundError(f"chat template {template} not found")
+  text = template_path.read_text(encoding='utf-8')
+  if '{prompt}' in text:
+    return text.replace('{prompt}', prompt)
+  # Append user prompt to template verbatim when no placeholder is present.
+  return f"{text}\n{prompt}"
 
 def resolve_device(requested: Optional[str]) -> torch.device:
   desired = requested or DEFAULT_DEVICE  # choose requested device or default preference
@@ -143,6 +179,8 @@ def main() -> None:
   ap.add_argument('--max_new_tokens', type=int, default=64, help='Maximum tokens to decode')  # generation length
   ap.add_argument('--temperature', type=float, default=1.0, help='Softmax temperature for sampling (default: 1.0)')
   ap.add_argument('--top_p', type=float, default=1.0, help='Top-p nucleus sampling threshold (default: 1.0 = disabled)')
+  ap.add_argument('--chat_template', default=None, help="Optional chat template ('canonical' or path to a template file).")
+  ap.add_argument('--system', default=None, help='Optional system instruction when using --chat_template canonical.')
   args = ap.parse_args()  # parse CLI args
 
   dataset_hint = (args.dataset or 'auto').lower()  # normalize dataset hint
@@ -172,10 +210,12 @@ def main() -> None:
     tokenizer.fit([args.prompt])  # build minimal vocabulary from prompt
 
   device_str = str(device)  # stringify device for generator helper
+  formatted_prompt = apply_chat_template(args.prompt, args.chat_template, args.system)
+
   text = generate(
     model,
     tokenizer,
-    args.prompt,
+    formatted_prompt,
     max_new_tokens=args.max_new_tokens,
     device=device_str,
     temperature=args.temperature,
